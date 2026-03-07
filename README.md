@@ -1,0 +1,14 @@
+"# UMP - Universal Media Player"  
+""  
+"Modern universal media player for video, audio and images"  
+""  
+"## Features"  
+"- Play video, audio, and images"  
+"- Playlist management"  
+"- YouTube download support"  
+"- Hardware acceleration"  
+"- Auto-start with Windows"  
+"- Dark/Light theme"  
+"- Multi-language (Russian/English)"  
+# ump
+# ump
