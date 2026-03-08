@@ -11,4 +11,3 @@
 "- Dark/Light theme"  
 "- Multi-language (Russian/English)"  
 # ump
-# ump
