@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Professional Universal Media Player - Play video, audio, and images"
+    />
+    <title>Universal Media Player</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html, body, #root {
+        width: 100%;
+        height: 100%;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
+          'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans',
+          'Helvetica Neue', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      :root {
+        --color-primary: #3b82f6;
+        --color-secondary: #1e40af;
+        --color-background: #0f172a;
+        --color-surface: #1e293b;
+        --color-text-primary: #f1f5f9;
+        --color-text-secondary: #cbd5e1;
+        --color-accent: #fbbf24;
+        --color-border: #334155;
+      }
+
+      html.light {
+        --color-primary: #2563eb;
+        --color-secondary: #1e40af;
+        --color-background: #f8fafc;
+        --color-surface: #ffffff;
+        --color-text-primary: #1e293b;
+        --color-text-secondary: #64748b;
+        --color-accent: #f59e0b;
+        --color-border: #e2e8f0;
+      }
+
+      body {
+        background-color: var(--color-background);
+        color: var(--color-text-primary);
+      }
+    </style>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this media player.</noscript>
+    <div id="root"></div>
+  </body>
+</html>
