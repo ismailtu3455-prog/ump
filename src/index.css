@@ -1,0 +1,543 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: transparent;
+  color: #f1f5f9;
+  overflow: hidden;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Прозрачность фона приложения */
+:root {
+  --bg-opacity: 0.75;
+  --primary-color: #ef4444;
+}
+
+#root {
+  background: rgba(15, 23, 42, var(--bg-opacity)) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: background 0.2s ease;
+}
+
+#root > * {
+  background: rgba(15, 23, 42, calc(var(--bg-opacity) * 0.95)) !important;
+}
+
+/* Полупрозрачные фоны для компонентов */
+.bg-dark-800 {
+  background: rgba(30, 41, 59, 0.9) !important;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+.bg-dark-900 {
+  background: rgba(15, 23, 42, var(--bg-opacity)) !important;
+}
+
+.bg-dark-950 {
+  background: rgba(2, 6, 23, 0.9) !important;
+}
+
+.bg-dark-700 {
+  background: rgba(51, 65, 85, 0.5) !important;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+/* Primary color override */
+.bg-primary-600 {
+  background-color: var(--primary-color) !important;
+}
+
+.bg-primary-500 {
+  background-color: var(--primary-color) !important;
+}
+
+.text-primary-500 {
+  color: var(--primary-color) !important;
+}
+
+.text-primary-400 {
+  color: var(--primary-color) !important;
+}
+
+.from-primary-400 {
+  --tw-gradient-from: var(--primary-color) var(--tw-gradient-from-position);
+}
+
+.to-primary-600 {
+  --tw-gradient-to: var(--primary-color) var(--tw-gradient-to-position);
+}
+
+.ring-primary-500 {
+  --tw-ring-color: var(--primary-color);
+}
+
+.focus\:ring-primary-500:focus {
+  --tw-ring-color: var(--primary-color);
+}
+
+.accent-primary-500 {
+  accent-color: var(--primary-color);
+}
+
+/* Custom scrollbar - Virtual style */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #ef4444, #dc2626);
+  border-radius: 5px;
+  border: 2px solid rgba(15, 23, 42, 0.5);
+  transition: all 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #f87171, #ef4444);
+  border: 2px solid rgba(15, 23, 42, 0.3);
+}
+
+::-webkit-scrollbar-corner {
+  background: rgba(15, 23, 42, 0.5);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #ef4444 rgba(15, 23, 42, 0.5);
+}
+
+/* Custom scrollbar for settings modal */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(30, 41, 59, 0.3);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #ef4444, #dc2626);
+  border-radius: 3px;
+  transition: all 0.3s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #f87171, #ef4444);
+}
+
+/* Video controls animation */
+.controls-fade {
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+.controls-fade.hidden {
+  opacity: 0;
+}
+
+/* Playlist item hover effect */
+.playlist-item {
+  transition: all 0.2s ease;
+}
+
+.playlist-item:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.playlist-item.active {
+  background: rgba(239, 68, 68, 0.2);
+  border-left: 3px solid #ef4444;
+}
+
+/* Button animations */
+.btn {
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  transform: scale(1.05);
+}
+
+.btn:active {
+  transform: scale(0.95);
+}
+
+/* Range input styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  background: transparent;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ef4444;
+  cursor: pointer;
+  border: 2px solid #1e293b;
+  margin-top: -6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+  border-radius: 2px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ef4444;
+  cursor: pointer;
+  border: 2px solid #1e293b;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: transparent;
+  border-radius: 2px;
+}
+
+/* Анимации для модальных окон */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-100%);
+    max-width: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    max-width: 600px;
+  }
+}
+
+@keyframes slideOutLeft {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+    max-width: 600px;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-100%);
+    max-width: 0;
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOutRight {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+@keyframes zoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes zoomOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes gradient {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.3s ease-out;
+}
+
+.animate-slideDown {
+  animation: slideDown 0.2s ease-out;
+}
+
+.animate-slideInLeft {
+  animation: slideInLeft 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-slideOutLeft {
+  animation: slideOutLeft 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-slideInRight {
+  animation: slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-slideOutRight {
+  animation: slideOutRight 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-zoomIn {
+  animation: zoomIn 0.2s ease-out;
+}
+
+.animate-zoomOut {
+  animation: zoomOut 0.2s ease-out;
+}
+
+.animate-fadeOut {
+  animation: fadeOut 0.2s ease-out;
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient 3s ease infinite;
+}
+
+.animate-spin-slow {
+  animation: spin 8s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.modal-content {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Анимация уведомлений */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+/* Анимация кнопок */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Анимация заставки */
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-30px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes logoFloat {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-10px) scale(1.05);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    filter: brightness(1) hue-rotate(0deg);
+  }
+  50% {
+    filter: brightness(1.2) hue-rotate(15deg);
+  }
+  100% {
+    filter: brightness(1) hue-rotate(0deg);
+  }
+}
+
+.splash-logo {
+  animation: logoFloat 3s ease-in-out infinite, shimmer 2s ease-in-out infinite;
+}
+
+.splash-title {
+  animation: fadeInUp 0.8s ease-out 0.3s both;
+}
+
+.splash-subtitle {
+  animation: fadeInUp 0.8s ease-out 0.5s both;
+}
+
+/* Светлая тема */
+.theme-light body {
+  background: rgba(241, 245, 249, calc(var(--bg-opacity) * 0.85));
+  color: #1e293b;
+}
+
+.theme-light #root {
+  background: rgba(241, 245, 249, calc(var(--bg-opacity) * 0.85));
+}
+
+.theme-light #root > div {
+  background: rgba(248, 250, 252, calc(var(--bg-opacity) * 0.95));
+}
+
+.theme-light .bg-dark-800 {
+  background: rgba(241, 245, 249, calc(var(--bg-opacity) * 0.5)) !important;
+}
+
+.theme-light .bg-dark-900 {
+  background: rgba(248, 250, 252, calc(var(--bg-opacity) * 0.95)) !important;
+}
+
+.theme-light .bg-dark-700 {
+  background: rgba(226, 232, 240, calc(var(--bg-opacity) * 0.5)) !important;
+}
+
+.theme-light .text-white {
+  color: #1e293b !important;
+}
+
+.theme-light ::-webkit-scrollbar-track {
+  background: rgba(226, 232, 240, calc(var(--bg-opacity) * 0.8));
+}
+
+.theme-light ::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, calc(var(--bg-opacity) * 0.8));
+}
+
+.theme-light input,
+.theme-light button,
+.theme-light select {
+  color: #1e293b;
+}
