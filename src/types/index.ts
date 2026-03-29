@@ -1,4 +1,23 @@
-export type MediaType = 'video' | 'audio' | 'image';
+﻿export type MediaType = 'video' | 'audio' | 'image';
+export type Language = 'ru' | 'en';
+export type ThemeMode = 'dark' | 'light';
+export type RepeatMode = 'none' | 'all' | 'one' | 'random';
+export type HotkeyAction =
+  | 'togglePlayPause'
+  | 'previousTrack'
+  | 'nextTrack'
+  | 'toggleRepeat'
+  | 'seekBackward'
+  | 'seekForward'
+  | 'volumeDown'
+  | 'volumeUp'
+  | 'speedDown'
+  | 'speedUp'
+  | 'speedReset'
+  | 'toggleMute'
+  | 'toggleFullscreen'
+  | 'openFiles';
+export type Hotkeys = Record<HotkeyAction, string>;
 
 export interface MediaFile {
   id: string;
@@ -10,16 +29,10 @@ export interface MediaFile {
   duration?: number;
   thumbnail?: string;
   addedAt: number;
-  playlistId?: string;
-  isLink?: boolean;
   isBlob?: boolean;
   isSaved?: boolean;
   isFavorite?: boolean;
-  quality?: string;
-  lastPlayedAt?: number;
-  playCount?: number;
   watchedProgress?: number;
-  order?: number;
 }
 
 export interface Playlist {
@@ -29,7 +42,6 @@ export interface Playlist {
   createdAt: number;
   updatedAt: number;
   isSystem?: boolean;
-  description?: string;
 }
 
 export interface PlayerState {
@@ -45,62 +57,26 @@ export interface PlayerState {
   error: string | null;
 }
 
-export interface HistoryItem {
-  id: string;
-  fileId: string;
-  fileName: string;
-  filePath: string;
-  type: MediaType;
-  playedAt: number;
-  watchedProgress: number;
-}
-
-export interface FavoritesState {
-  fileIds: string[];
-}
-
 export interface PlaylistState {
   playlists: Playlist[];
   activePlaylistId: string;
   currentIndex: number;
-  isShuffled: boolean;
-  repeatMode: 'none' | 'all' | 'one' | 'random';
+  repeatMode: RepeatMode;
   searchQuery: string;
-  fileOrder: Record<string, number>;
 }
 
-export interface UIState {
-  isSidebarOpen: boolean;
-  theme: 'dark' | 'light';
-  language: 'ru' | 'en';
-  windowSettings: {
-    alwaysOnTop: boolean;
-    width: number;
-    height: number;
-    x?: number;
-    y?: number;
-    opacity?: number;
-    hardwareAcceleration?: boolean;
-    autoStart?: boolean;
-    trayMode?: boolean;
-  };
-  notifications: Notification[];
-  isMusicMode: boolean;
-  playerSettings: {
-    autoplay: boolean;
-    autoplayDelay: number;
-    autoplayEnabled: boolean;
-  };
-  hotkeys: {
-    playPause: string;
-    next: string;
-    previous: string;
-    fullscreen: string;
-    volumeUp: string;
-    volumeDown: string;
-    seekForward: string;
-    seekBackward: string;
-  };
+export interface WindowSettings {
+  trayMode: boolean;
+  width: number;
+  height: number;
+  opacity: number;
+  accentColor: string;
+  autoStart: boolean;
+}
+
+export interface PlayerSettings {
+  delayEnabled: boolean;
+  playbackDelaySec: number;
 }
 
 export interface Notification {
@@ -111,60 +87,43 @@ export interface Notification {
   createdAt: number;
 }
 
-export interface RootState {
-  player: PlayerState;
-  playlist: PlaylistState;
-  ui: UIState;
-  favorites: FavoritesState;
-  history: HistoryItem[];
+export interface UIState {
+  isSidebarOpen: boolean;
+  theme: ThemeMode;
+  language: Language;
+  windowSettings: WindowSettings;
+  playerSettings: PlayerSettings;
+  hotkeys: Hotkeys;
+  autoSaveOnAdd: boolean;
+  notifications: Notification[];
 }
 
 declare global {
   interface Window {
     electronAPI?: {
-      send: (channel: string, data?: any) => void;
+      send: (channel: string, data?: unknown) => void;
       on: (channel: string, callback: (...args: any[]) => void) => void;
       off: (channel: string, callback: (...args: any[]) => void) => void;
       removeAllListeners: (channel: string) => void;
       invoke: (channel: string, ...args: any[]) => Promise<any>;
       openFileDialog: () => void;
-      savePlaylist: (name: string, files: any[]) => Promise<any>;
       loadSavedPlaylists: () => Promise<any>;
-      createPlaylistFolder: (name: string) => Promise<any>;
       deletePlaylistFolder: (name: string) => Promise<any>;
       saveFilesToPlaylist: (name: string, files: any[]) => Promise<any>;
-      exportPlaylists: (playlists: any[]) => Promise<any>;
-      importPlaylists: () => Promise<any>;
-      showNotification: (title: string, message: string) => void;
-      getWindowSettings: () => Promise<any>;
-      setWindowSettings: (settings: any) => Promise<any>;
-      logToFile: (level: string, message: string) => Promise<any>;
-      youtubeGetInfo: (url: string) => Promise<any>;
-      youtubeDownload: (url: string, formatId: string, fileName: string) => Promise<any>;
       openPlaylistsFolder: () => Promise<any>;
-      openUrl: (url: string) => Promise<any>;
-      setAutoStart: (enable: boolean) => Promise<any>;
+      getWindowSettings: () => Promise<any>;
+      setWindowSettings: (settings: Partial<WindowSettings>) => Promise<any>;
+      setAutoStart: (enabled: boolean) => Promise<any>;
       getAutoStart: () => Promise<any>;
-      setTrayMode: (enable: boolean) => Promise<any>;
+      setTrayMode: (enabled: boolean) => Promise<any>;
       getTrayMode: () => Promise<any>;
-      // YouTube Music API
-      ytMusicSearch: (query: string, limit?: number, filter?: string) => Promise<any>;
-      ytMusicTrackInfo: (videoId: string) => Promise<any>;
-      ytMusicSuggestions: (query: string) => Promise<any>;
-      ytMusicHome: (limit?: number) => Promise<any>;
-      ytMusicCharts: (country?: string) => Promise<any>;
-      ytMusicArtist: (artistId: string) => Promise<any>;
-      ytMusicAlbum: (albumId: string) => Promise<any>;
-      ytMusicPlaylist: (playlistId: string) => Promise<any>;
-      ytMusicLyrics: (browseId: string) => Promise<any>;
-      ytMusicHealth: () => Promise<any>;
-      // PiP режим
+      openUrl: (url: string) => Promise<any>;
       enterPictureInPicture: () => Promise<any>;
       exitPictureInPicture: () => Promise<any>;
-      // Управление окном
       minimizeWindow: () => void;
       maximizeWindow: () => void;
       closeWindow: () => void;
     };
   }
 }
+

@@ -1,13 +1,13 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { PlaylistState, Playlist, MediaFile } from '@/types';
+﻿import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { PlaylistState, Playlist, MediaFile, RepeatMode } from '@/types';
 
-const generateId = () => `pl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+const createPlaylistId = () => `pl_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
 const initialState: PlaylistState = {
   playlists: [
     {
       id: 'recent',
-      name: 'Недавние',
+      name: 'Recent',
       files: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -16,10 +16,8 @@ const initialState: PlaylistState = {
   ],
   activePlaylistId: 'recent',
   currentIndex: -1,
-  isShuffled: false,
   repeatMode: 'none',
   searchQuery: '',
-  fileOrder: {},
 };
 
 const playlistSlice = createSlice({
@@ -27,173 +25,190 @@ const playlistSlice = createSlice({
   initialState,
   reducers: {
     createPlaylist: (state, action: PayloadAction<string>) => {
+      const name = action.payload.trim();
+      if (!name) return;
+
       const newPlaylist: Playlist = {
-        id: generateId(),
-        name: action.payload.trim(),
+        id: createPlaylistId(),
+        name,
         files: [],
         createdAt: Date.now(),
         updatedAt: Date.now(),
         isSystem: false,
       };
+
       state.playlists.push(newPlaylist);
       state.activePlaylistId = newPlaylist.id;
+      state.currentIndex = -1;
     },
     createPlaylistWithFiles: (state, action: PayloadAction<{ playlist: Playlist }>) => {
+      const existing = state.playlists.find((item) => item.id === action.payload.playlist.id);
+      if (existing) return;
+
       state.playlists.push(action.payload.playlist);
       state.activePlaylistId = action.payload.playlist.id;
+      state.currentIndex = action.payload.playlist.files.length > 0 ? 0 : -1;
     },
     deletePlaylist: (state, action: PayloadAction<string>) => {
-      const playlistId = action.payload;
-      const playlist = state.playlists.find(p => p.id === playlistId);
+      const target = state.playlists.find((playlist) => playlist.id === action.payload);
+      if (!target || target.isSystem) return;
 
-      if (!playlist || playlist.isSystem) {
-        return;
-      }
-      state.playlists = state.playlists.filter(p => p.id !== playlistId);
-      if (state.activePlaylistId === playlistId) {
+      state.playlists = state.playlists.filter((playlist) => playlist.id !== action.payload);
+
+      if (state.activePlaylistId === action.payload) {
         state.activePlaylistId = 'recent';
+        state.currentIndex = -1;
       }
     },
     renamePlaylist: (state, action: PayloadAction<{ playlistId: string; newName: string }>) => {
       const { playlistId, newName } = action.payload;
-      const playlist = state.playlists.find(p => p.id === playlistId);
-      if (playlist && !playlist.isSystem) {
-        playlist.name = newName.trim();
-        playlist.updatedAt = Date.now();
-      }
+      const playlist = state.playlists.find((item) => item.id === playlistId);
+      if (!playlist || playlist.isSystem) return;
+
+      const name = newName.trim();
+      if (!name) return;
+
+      playlist.name = name;
+      playlist.updatedAt = Date.now();
     },
     addFilesToPlaylist: (state, action: PayloadAction<{ playlistId: string; files: MediaFile[] }>) => {
       const { playlistId, files } = action.payload;
-      const playlist = state.playlists.find(p => p.id === playlistId);
-      if (!playlist) return;
+      const playlist = state.playlists.find((item) => item.id === playlistId);
+      if (!playlist || files.length === 0) return;
 
-      const existingIds = new Set(playlist.files.map(f => f.id));
-      const newFiles = files.filter(f => !existingIds.has(f.id));
-      playlist.files.push(...newFiles);
+      const knownKeys = new Set(
+        playlist.files.map((file) => `${file.path}|${file.name}|${file.type}`)
+      );
+      const uniqueFiles = files.filter((file) => {
+        const fileKey = `${file.path}|${file.name}|${file.type}`;
+        if (knownKeys.has(fileKey)) return false;
+        knownKeys.add(fileKey);
+        return true;
+      });
+
+      if (uniqueFiles.length === 0) return;
+
+      playlist.files.push(...uniqueFiles);
       playlist.updatedAt = Date.now();
 
-      if (state.currentIndex === -1 && newFiles.length > 0) {
+      if (state.currentIndex === -1 && playlist.id === state.activePlaylistId) {
         state.currentIndex = 0;
       }
     },
     removeFileFromPlaylist: (state, action: PayloadAction<{ playlistId: string; fileId: string }>) => {
       const { playlistId, fileId } = action.payload;
-      const playlist = state.playlists.find(p => p.id === playlistId);
+      const playlist = state.playlists.find((item) => item.id === playlistId);
       if (!playlist) return;
 
-      const index = playlist.files.findIndex(f => f.id === fileId);
-      playlist.files = playlist.files.filter(f => f.id !== fileId);
+      const removedIndex = playlist.files.findIndex((file) => file.id === fileId);
+      if (removedIndex === -1) return;
+
+      playlist.files.splice(removedIndex, 1);
       playlist.updatedAt = Date.now();
 
-      if (state.currentIndex === index) {
-        state.currentIndex = Math.min(index, playlist.files.length - 1);
-      } else if (state.currentIndex > index) {
-        state.currentIndex--;
+      if (playlistId === state.activePlaylistId) {
+        if (playlist.files.length === 0) {
+          state.currentIndex = -1;
+        } else if (state.currentIndex > removedIndex) {
+          state.currentIndex -= 1;
+        } else if (state.currentIndex === removedIndex) {
+          state.currentIndex = Math.min(removedIndex, playlist.files.length - 1);
+        }
       }
-    },
-    reorderFiles: (state, action: PayloadAction<{ playlistId: string; fromIndex: number; toIndex: number }>) => {
-      const { playlistId, fromIndex, toIndex } = action.payload;
-      const playlist = state.playlists.find(p => p.id === playlistId);
-      if (!playlist) return;
-
-      const [removed] = playlist.files.splice(fromIndex, 1);
-      playlist.files.splice(toIndex, 0, removed);
-      playlist.updatedAt = Date.now();
     },
     setSearchQuery: (state, action: PayloadAction<string>) => {
       state.searchQuery = action.payload;
     },
     setActivePlaylist: (state, action: PayloadAction<string>) => {
-      if (state.playlists.some(p => p.id === action.payload)) {
-        state.activePlaylistId = action.payload;
-        state.currentIndex = -1;
-      }
+      if (!state.playlists.some((playlist) => playlist.id === action.payload)) return;
+
+      state.activePlaylistId = action.payload;
+      const activePlaylist = state.playlists.find((playlist) => playlist.id === action.payload);
+      state.currentIndex = activePlaylist && activePlaylist.files.length > 0 ? 0 : -1;
     },
     setCurrentIndex: (state, action: PayloadAction<number>) => {
-      const playlist = state.playlists.find(p => p.id === state.activePlaylistId);
-      if (playlist && action.payload >= -1 && action.payload < playlist.files.length) {
-        state.currentIndex = action.payload;
-      }
+      const activePlaylist = state.playlists.find((playlist) => playlist.id === state.activePlaylistId);
+      if (!activePlaylist) return;
+
+      const index = action.payload;
+      if (index < -1 || index >= activePlaylist.files.length) return;
+
+      state.currentIndex = index;
     },
     nextTrack: (state) => {
-      const playlist = state.playlists.find(p => p.id === state.activePlaylistId);
+      const playlist = state.playlists.find((item) => item.id === state.activePlaylistId);
       if (!playlist || playlist.files.length === 0) return;
 
       if (state.repeatMode === 'one') return;
 
-      let nextIndex = state.currentIndex + 1;
-      
       if (state.repeatMode === 'random') {
-        // Случайный трек
-        nextIndex = Math.floor(Math.random() * playlist.files.length);
-      } else if (nextIndex >= playlist.files.length) {
-        // Конец плейлиста
-        if (state.repeatMode === 'all') {
-          nextIndex = 0; // Начать заново
-        } else {
-          nextIndex = playlist.files.length - 1; // Остановиться на последнем
-        }
+        state.currentIndex = Math.floor(Math.random() * playlist.files.length);
+        return;
       }
-      
-      state.currentIndex = nextIndex;
+
+      const nextIndex = state.currentIndex + 1;
+      if (nextIndex < playlist.files.length) {
+        state.currentIndex = nextIndex;
+        return;
+      }
+
+      if (state.repeatMode === 'all') {
+        state.currentIndex = 0;
+      }
     },
     previousTrack: (state) => {
-      const playlist = state.playlists.find(p => p.id === state.activePlaylistId);
+      const playlist = state.playlists.find((item) => item.id === state.activePlaylistId);
       if (!playlist || playlist.files.length === 0) return;
-      state.currentIndex = Math.max(0, state.currentIndex - 1);
+
+      if (state.currentIndex <= 0) {
+        state.currentIndex = 0;
+        return;
+      }
+
+      state.currentIndex -= 1;
     },
-    toggleShuffle: (state) => {
-      state.isShuffled = !state.isShuffled;
-    },
-    toggleRepeatMode: (state) => {
-      // Циклическое переключение: none -> all -> one -> random -> none
-      const modes: ('none' | 'all' | 'one' | 'random')[] = ['none', 'all', 'one', 'random'];
-      const currentIndex = modes.indexOf(state.repeatMode);
-      state.repeatMode = modes[(currentIndex + 1) % modes.length];
-    },
-    setRepeatMode: (state, action: PayloadAction<'none' | 'all' | 'one' | 'random'>) => {
+    setRepeatMode: (state, action: PayloadAction<RepeatMode>) => {
       state.repeatMode = action.payload;
     },
-    moveFileBetweenPlaylists: (state, action: PayloadAction<{ fromPlaylistId: string; toPlaylistId: string; fileId: string }>) => {
-      const { fromPlaylistId, toPlaylistId, fileId } = action.payload;
-      const fromPlaylist = state.playlists.find(p => p.id === fromPlaylistId);
-      const toPlaylist = state.playlists.find(p => p.id === toPlaylistId);
-
-      if (!fromPlaylist || !toPlaylist || fromPlaylistId === toPlaylistId) return;
-
-      const fileIndex = fromPlaylist.files.findIndex(f => f.id === fileId);
-      if (fileIndex === -1) return;
-
-      const [file] = fromPlaylist.files.splice(fileIndex, 1);
-      toPlaylist.files.push({ ...file, playlistId: toPlaylistId });
-
-      fromPlaylist.updatedAt = Date.now();
-      toPlaylist.updatedAt = Date.now();
-
-      if (state.currentIndex === fileIndex) {
-        state.currentIndex = -1;
-      } else if (state.currentIndex > fileIndex) {
-        state.currentIndex--;
-      }
+    toggleRepeatMode: (state) => {
+      const order: RepeatMode[] = ['none', 'all', 'one', 'random'];
+      const current = order.indexOf(state.repeatMode);
+      state.repeatMode = order[(current + 1) % order.length];
     },
     updateFileProgress: (state, action: PayloadAction<{ playlistId: string; fileId: string; progress: number }>) => {
       const { playlistId, fileId, progress } = action.payload;
-      const playlist = state.playlists.find(p => p.id === playlistId);
+      const playlist = state.playlists.find((item) => item.id === playlistId);
       if (!playlist) return;
 
-      const file = playlist.files.find(f => f.id === fileId);
-      if (file) {
-        file.watchedProgress = progress;
-      }
+      const file = playlist.files.find((item) => item.id === fileId);
+      if (!file) return;
+
+      file.watchedProgress = Math.max(0, Math.min(100, progress));
     },
     toggleFavorite: (state, action: PayloadAction<{ playlistId: string; fileId: string }>) => {
       const { playlistId, fileId } = action.payload;
-      const playlist = state.playlists.find(p => p.id === playlistId);
+      const playlist = state.playlists.find((item) => item.id === playlistId);
       if (!playlist) return;
 
-      const file = playlist.files.find(f => f.id === fileId);
-      if (file) {
-        file.isFavorite = !file.isFavorite;
+      const sourceIndex = playlist.files.findIndex((item) => item.id === fileId);
+      if (sourceIndex === -1) return;
+
+      const file = playlist.files[sourceIndex];
+      const nextFavorite = !file.isFavorite;
+      file.isFavorite = nextFavorite;
+      playlist.updatedAt = Date.now();
+
+      if (!nextFavorite || sourceIndex === 0) return;
+
+      const [moved] = playlist.files.splice(sourceIndex, 1);
+      playlist.files.unshift(moved);
+
+      if (playlistId !== state.activePlaylistId) return;
+
+      if (state.currentIndex === sourceIndex) {
+        state.currentIndex = 0;
+      } else if (state.currentIndex >= 0 && state.currentIndex < sourceIndex) {
+        state.currentIndex += 1;
       }
     },
   },
@@ -206,18 +221,16 @@ export const {
   renamePlaylist,
   addFilesToPlaylist,
   removeFileFromPlaylist,
-  reorderFiles,
   setSearchQuery,
   setActivePlaylist,
   setCurrentIndex,
   nextTrack,
   previousTrack,
-  toggleShuffle,
-  toggleRepeatMode,
   setRepeatMode,
-  moveFileBetweenPlaylists,
+  toggleRepeatMode,
   updateFileProgress,
   toggleFavorite,
 } = playlistSlice.actions;
 
 export default playlistSlice.reducer;
+

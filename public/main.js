@@ -1,103 +1,422 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog, Notification, shell } = require('electron');
-const path = require('path');
+﻿const { app, BrowserWindow, Menu, Tray, ipcMain, dialog, Notification, nativeImage, shell } = require('electron');
 const fs = require('fs');
-// ytdl закомментирован из-за проблем совместимости с Electron
-// const ytdl = require('@distube/ytdl-core');
+const path = require('path');
 
-let mainWindow;
-let isReady = false;
-let pendingFilePath = null;
 const isDev = !app.isPackaged;
+const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 const PLAYLISTS_DIR = isDev
   ? path.join(__dirname, '../playlists')
   : path.join(app.getPath('userData'), 'playlists');
 
-function createWindow(filePath = null) {
-  const basePath = isDev ? __dirname : path.join(process.resourcesPath, 'build');
+const MEDIA_EXTENSIONS = new Set([
+  'mp4',
+  'webm',
+  'mkv',
+  'avi',
+  'mov',
+  'mp3',
+  'wav',
+  'flac',
+  'm4a',
+  'jpg',
+  'jpeg',
+  'png',
+  'webp',
+  'gif',
+  'bmp',
+]);
 
+function resolveIconPath() {
+  const candidates = [
+    path.join(__dirname, 'icon.png'),
+    path.join(__dirname, '../build/icon.png'),
+    path.join(process.resourcesPath || '', 'build', 'icon.png'),
+    path.join(__dirname, 'Untitled Project (1).jpg'),
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return candidates[0];
+}
+
+const APP_ICON = resolveIconPath();
+
+let mainWindow = null;
+let splashWindow = null;
+let tray = null;
+let handlersRegistered = false;
+let pendingFiles = [];
+let trayModeEnabled = false;
+let isQuitting = false;
+
+const singleInstanceLock = app.requestSingleInstanceLock();
+if (!singleInstanceLock) {
+  app.quit();
+}
+
+function ensurePlaylistsDirectory() {
+  if (!fs.existsSync(PLAYLISTS_DIR)) {
+    fs.mkdirSync(PLAYLISTS_DIR, { recursive: true });
+  }
+}
+
+function normalizeFilePath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return '';
+
+  if (filePath.startsWith('file:///')) {
+    const decoded = decodeURIComponent(filePath.replace('file:///', ''));
+    return process.platform === 'win32' ? decoded.replace(/^\//, '') : `/${decoded}`;
+  }
+
+  return filePath;
+}
+
+function isValidMediaFile(filePath) {
+  const normalized = normalizeFilePath(filePath);
+  if (!normalized || normalized.startsWith('-')) return false;
+
+  const ext = path.extname(normalized).toLowerCase().replace('.', '');
+  return MEDIA_EXTENSIONS.has(ext);
+}
+
+function extractMediaFiles(argv) {
+  return argv
+    .map((entry) => normalizeFilePath(entry))
+    .filter((entry) => entry && isValidMediaFile(entry));
+}
+
+function showMainWindow() {
+  if (!mainWindow) return;
+
+  mainWindow.setSkipTaskbar(false);
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function hideMainWindowToTray() {
+  if (!mainWindow) return;
+
+  mainWindow.hide();
+  mainWindow.setSkipTaskbar(true);
+}
+
+function updateTrayMenu() {
+  if (!tray) return;
+
+  const menu = Menu.buildFromTemplate([
+    {
+      label: 'Open Player',
+      click: () => showMainWindow(),
+    },
+    {
+      label: 'Quit',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(menu);
+}
+
+function createTray() {
+  if (tray) {
+    updateTrayMenu();
+    return;
+  }
+
+  const iconImage = nativeImage.createFromPath(APP_ICON);
+  tray = new Tray(iconImage.isEmpty() ? nativeImage.createEmpty() : iconImage);
+  tray.setToolTip('Universal Media Player');
+  tray.on('click', () => {
+    if (!mainWindow) return;
+
+    if (mainWindow.isVisible()) {
+      hideMainWindowToTray();
+      return;
+    }
+
+    showMainWindow();
+  });
+  tray.on('double-click', () => showMainWindow());
+
+  updateTrayMenu();
+}
+
+function destroyTray() {
+  if (!tray) return;
+
+  tray.destroy();
+  tray = null;
+}
+
+function setTrayModeEnabled(enabled) {
+  trayModeEnabled = Boolean(enabled);
+
+  if (trayModeEnabled) {
+    createTray();
+  } else {
+    destroyTray();
+    if (mainWindow) {
+      mainWindow.setSkipTaskbar(false);
+    }
+  }
+
+  return trayModeEnabled;
+}
+
+function createSplashWindow() {
+  splashWindow = new BrowserWindow({
+    width: 460,
+    height: 300,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: true,
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const splashHtml = `
+  <!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <style>
+        body {
+          margin: 0;
+          width: 100vw;
+          height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-family: Manrope, Segoe UI, sans-serif;
+          background: radial-gradient(circle at 20% 0, rgba(79,157,255,0.34), transparent 45%), linear-gradient(150deg, rgba(12,18,32,0.98), rgba(18,30,54,0.98));
+          color: #eef4ff;
+          overflow: hidden;
+        }
+
+        .card {
+          width: 360px;
+          border-radius: 24px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          padding: 28px;
+          text-align: center;
+          background: rgba(255,255,255,0.08);
+          backdrop-filter: blur(16px);
+        }
+
+        .logo-wrap {
+          position: relative;
+          width: 76px;
+          height: 76px;
+          margin: 0 auto 16px;
+        }
+
+        .ring,
+        .ring2 {
+          position: absolute;
+          inset: 0;
+          border-radius: 50%;
+          border: 2px solid rgba(79,157,255,0.45);
+          animation: spin 1.6s linear infinite;
+        }
+
+        .ring2 {
+          inset: 8px;
+          border-color: rgba(255,255,255,0.6);
+          animation-direction: reverse;
+          animation-duration: 1.2s;
+        }
+
+        .logo {
+          position: absolute;
+          inset: 18px;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          background: linear-gradient(160deg, #5ba5ff, #2b69ff);
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          box-shadow: 0 0 26px rgba(79,157,255,0.55);
+          animation: pulse 1.3s ease-in-out infinite;
+        }
+
+        .progress {
+          margin-top: 14px;
+          height: 4px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.18);
+          overflow: hidden;
+        }
+
+        .progress span {
+          display: block;
+          height: 100%;
+          width: 32%;
+          background: linear-gradient(90deg, #4f9dff, #9bc2ff);
+          animation: loader 1.1s ease-in-out infinite;
+        }
+
+        h1 {
+          margin: 0;
+          font-size: 18px;
+          font-weight: 600;
+          letter-spacing: 0.02em;
+        }
+
+        p {
+          margin: 8px 0 0;
+          font-size: 12px;
+          color: rgba(238, 244, 255, 0.72);
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        @keyframes pulse {
+          0%, 100% { transform: scale(0.92); }
+          50% { transform: scale(1); }
+        }
+
+        @keyframes loader {
+          0% { transform: translateX(-120%); }
+          100% { transform: translateX(420%); }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="logo-wrap">
+          <div class="ring"></div>
+          <div class="ring2"></div>
+          <div class="logo">UM</div>
+        </div>
+        <h1>Universal Media Player</h1>
+        <p>Preparing workspace...</p>
+        <div class="progress"><span></span></div>
+      </div>
+    </body>
+  </html>`;
+
+  splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(splashHtml)}`);
+}
+
+function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1024,
     minHeight: 650,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(basePath, 'preload.js'),
-    },
-    icon: isDev ? path.join(__dirname, 'Untitled Project (1).jpg') : path.join(basePath, 'Untitled Project (1).jpg'),
-    backgroundColor: '#0f172a',
     show: false,
-    frame: true,
+    frame: false,
+    titleBarStyle: 'hidden',
+    backgroundColor: '#0b1220',
+    icon: APP_ICON,
+    webPreferences: {
+      preload: PRELOAD_PATH,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: true,
+    },
   });
 
   const startUrl = isDev
     ? 'http://localhost:5173'
-    : `file://${path.join(basePath, 'index.html')}`;
+    : `file://${path.join(__dirname, '../build/index.html')}`;
 
   mainWindow.loadURL(startUrl);
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-    if (isDev) mainWindow.webContents.openDevTools();
-    
-    // Если есть файл для открытия, отправляем его после загрузки
-    if (filePath || pendingFilePath) {
+    showMainWindow();
+
+    if (splashWindow) {
       setTimeout(() => {
-        const fileToOpen = filePath || pendingFilePath;
-        if (fileToOpen && isValidMediaFile(fileToOpen)) {
-          console.log('Sending file to app:', fileToOpen);
-          mainWindow.webContents.send('file-opened', [fileToOpen]);
+        if (splashWindow && !splashWindow.isDestroyed()) {
+          splashWindow.close();
+          splashWindow = null;
         }
-      }, 500);
+      }, 320);
     }
-    isReady = true;
+
+    if (isDev) {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    flushPendingFiles();
+  });
+
+  mainWindow.on('close', (event) => {
+    if (trayModeEnabled && !isQuitting) {
+      event.preventDefault();
+      hideMainWindowToTray();
+    }
   });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
-    isReady = false;
   });
 
-  createMenu();
-  setupIpcHandlers();
+  createAppMenu();
 }
 
-function createMenu() {
+function createAppMenu() {
   const template = [
     {
-      label: 'Файл',
+      label: 'File',
       submenu: [
         {
-          label: 'Открыть файл',
+          label: 'Open files',
           accelerator: 'CmdOrCtrl+O',
           click: () => openFileDialog(),
         },
         { type: 'separator' },
         {
-          label: 'Выход',
+          label: 'Quit',
           accelerator: 'CmdOrCtrl+Q',
-          click: () => app.quit(),
+          click: () => {
+            isQuitting = true;
+            app.quit();
+          },
         },
       ],
     },
     {
-      label: 'Вид',
+      label: 'View',
       submenu: [
         {
-          label: 'Перезагрузить',
+          label: 'Reload',
           accelerator: 'CmdOrCtrl+R',
           click: () => mainWindow?.webContents.reload(),
         },
         {
-          label: 'Инструменты разработчика',
+          label: 'Developer Tools',
           accelerator: 'F12',
           click: () => mainWindow?.webContents.toggleDevTools(),
         },
       ],
     },
     {
-      label: 'Воспроизведение',
+      label: 'Playback',
       submenu: [
         {
           label: 'Play/Pause',
@@ -105,14 +424,14 @@ function createMenu() {
           click: () => mainWindow?.webContents.send('playback-control', 'toggle'),
         },
         {
-          label: 'Следующий',
+          label: 'Next',
           accelerator: 'N',
           click: () => mainWindow?.webContents.send('playback-control', 'next'),
         },
         {
-          label: 'Предыдущий',
+          label: 'Previous',
           accelerator: 'P',
-          click: () => mainWindow?.webContents.send('playback-control', 'prev'),
+          click: () => mainWindow?.webContents.send('playback-control', 'previous'),
         },
       ],
     },
@@ -122,409 +441,373 @@ function createMenu() {
 }
 
 function openFileDialog() {
-  dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile', 'multiSelections'],
-    filters: [
-      { name: 'Все медиа', extensions: ['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv', 'mp3', 'wav', 'flac', 'jpg', 'png', 'webp'] },
-      { name: 'Видео', extensions: ['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv'] },
-      { name: 'Аудио', extensions: ['mp3', 'wav', 'flac', 'aac', 'ogg'] },
-      { name: 'Изображения', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] },
-      { name: 'Все файлы', extensions: ['*'] },
-    ],
-  }).then(result => {
-    if (!result.canceled && result.filePaths.length > 0) {
-      // Отправляем файлы через files-selected (для Sidebar)
-      mainWindow.webContents.send('files-selected', result.filePaths);
-    }
-  });
+  if (!mainWindow) return;
+
+  dialog
+    .showOpenDialog(mainWindow, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        {
+          name: 'Media files',
+          extensions: Array.from(MEDIA_EXTENSIONS),
+        },
+        {
+          name: 'All files',
+          extensions: ['*'],
+        },
+      ],
+    })
+    .then((result) => {
+      if (result.canceled || result.filePaths.length === 0) return;
+
+      const files = result.filePaths
+        .map((filePath) => normalizeFilePath(filePath))
+        .filter((filePath) => isValidMediaFile(filePath));
+
+      if (files.length > 0) {
+        mainWindow.webContents.send('files-selected', files);
+      }
+    })
+    .catch(() => undefined);
+}
+
+function flushPendingFiles() {
+  if (!mainWindow || pendingFiles.length === 0) return;
+
+  const unique = Array.from(new Set(pendingFiles.filter((filePath) => isValidMediaFile(filePath))));
+  pendingFiles = [];
+
+  if (unique.length > 0) {
+    mainWindow.webContents.send('files-opened', unique);
+  }
+}
+
+function queueFilesForOpen(filePaths) {
+  const validFiles = filePaths.filter((filePath) => isValidMediaFile(filePath));
+  if (validFiles.length === 0) return;
+
+  if (!mainWindow || mainWindow.webContents.isLoading()) {
+    pendingFiles.push(...validFiles);
+    return;
+  }
+
+  mainWindow.webContents.send('files-opened', validFiles);
 }
 
 function setupIpcHandlers() {
-  // Открытие диалога файлов
+  if (handlersRegistered) return;
+  handlersRegistered = true;
+
   ipcMain.on('open-file-dialog', () => {
     openFileDialog();
   });
 
-  // Загрузка сохранённых плейлистов
   ipcMain.handle('load-saved-playlists', async () => {
     try {
-      if (!fs.existsSync(PLAYLISTS_DIR)) {
-        return { success: true, playlists: [] };
-      }
+      ensurePlaylistsDirectory();
 
-      const playlistDirs = fs.readdirSync(PLAYLISTS_DIR).filter(item => {
-        const itemPath = path.join(PLAYLISTS_DIR, item);
-        return fs.statSync(itemPath).isDirectory();
+      const folders = fs.readdirSync(PLAYLISTS_DIR).filter((entry) => {
+        return fs.statSync(path.join(PLAYLISTS_DIR, entry)).isDirectory();
       });
 
-      const playlists = [];
-      for (const dir of playlistDirs) {
-        const dirPath = path.join(PLAYLISTS_DIR, dir);
-        const filesJsonPath = path.join(dirPath, 'files.json');
-
-        if (fs.existsSync(filesJsonPath)) {
-          const filesJson = JSON.parse(fs.readFileSync(filesJsonPath, 'utf-8'));
-          playlists.push({
-            name: dir,
-            savedFiles: filesJson.files || [],
-          });
+      const playlists = folders.map((folderName) => {
+        const filesPath = path.join(PLAYLISTS_DIR, folderName, 'files.json');
+        if (!fs.existsSync(filesPath)) {
+          return { name: folderName, savedFiles: [] };
         }
-      }
+
+        const content = JSON.parse(fs.readFileSync(filesPath, 'utf-8'));
+        return {
+          name: folderName,
+          savedFiles: Array.isArray(content.files) ? content.files : [],
+        };
+      });
 
       return { success: true, playlists };
     } catch (error) {
-      console.error('Error loading playlists:', error);
-      return { success: false, error: error.message, playlists: [] };
+      return { success: false, playlists: [], error: String(error?.message || error) };
     }
   });
 
-  // Создание папки плейлиста
-  ipcMain.handle('create-playlist-folder', async (event, playlistName) => {
+  ipcMain.handle('delete-playlist-folder', async (_event, playlistName) => {
     try {
-      const targetDir = path.join(PLAYLISTS_DIR, playlistName);
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
-      return { success: true, path: targetDir };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-
-  // Удаление папки плейлиста
-  ipcMain.handle('delete-playlist-folder', async (event, playlistName) => {
-    try {
-      const targetDir = path.join(PLAYLISTS_DIR, playlistName);
-      console.log('Deleting playlist folder:', targetDir);
-      if (fs.existsSync(targetDir)) {
-        fs.rmSync(targetDir, { recursive: true, force: true });
-        console.log('Folder deleted successfully');
-      } else {
-        console.log('Folder does not exist');
+      ensurePlaylistsDirectory();
+      const target = path.join(PLAYLISTS_DIR, playlistName);
+      if (fs.existsSync(target)) {
+        fs.rmSync(target, { recursive: true, force: true });
       }
       return { success: true };
     } catch (error) {
-      console.error('Error deleting folder:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: String(error?.message || error) };
     }
   });
 
-  // Открыть папку плейлистов
   ipcMain.handle('open-playlists-folder', async () => {
     try {
-      console.log('Playlists directory:', PLAYLISTS_DIR);
-      if (!fs.existsSync(PLAYLISTS_DIR)) {
-        fs.mkdirSync(PLAYLISTS_DIR, { recursive: true });
+      ensurePlaylistsDirectory();
+      const openResult = await shell.openPath(PLAYLISTS_DIR);
+      if (openResult) {
+        return { success: false, error: openResult };
       }
-      
-      // Пробуем открыть через shell.openPath
-      const result = shell.openPath(PLAYLISTS_DIR);
-      console.log('shell.openPath result:', result);
-      console.log('Opened playlists folder:', PLAYLISTS_DIR);
-      
+
       return { success: true, path: PLAYLISTS_DIR };
     } catch (error) {
-      console.error('Error opening folder:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: String(error?.message || error) };
     }
   });
 
-  // Сохранение файлов плейлиста
-  ipcMain.handle('save-files-to-playlist', async (event, playlistName, files) => {
-    console.log('=== save-files-to-playlist called ===');
-    console.log('Playlist name:', playlistName);
-    console.log('Files to save:', files.length);
-    console.log('Files:', files);
-    
+  ipcMain.handle('save-files-to-playlist', async (_event, playlistName, files) => {
     try {
-      const targetDir = path.join(PLAYLISTS_DIR, playlistName);
-      console.log('Target directory:', targetDir);
-      
-      if (!fs.existsSync(targetDir)) {
-        console.log('Creating directory:', targetDir);
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
+      ensurePlaylistsDirectory();
+      const playlistPath = path.join(PLAYLISTS_DIR, playlistName);
 
+      await fs.promises.mkdir(playlistPath, { recursive: true });
+
+      const inputFiles = Array.isArray(files) ? files : [];
+      const total = inputFiles.length;
       let copiedCount = 0;
-      let errorCount = 0;
-      let skippedCount = 0;
+      let processed = 0;
       const savedFiles = [];
 
-      for (const file of files) {
-        try {
-          // Очищаем путь от file:// и лишних слешей
-          let sourcePath = file.path.replace('file:///', '').replace(/^\//, '');
-          
-          // Для Windows путей
-          if (sourcePath.startsWith('/') && sourcePath.length > 1) {
-            sourcePath = sourcePath.substring(1);
-          }
-
-          const fileName = path.basename(sourcePath);
-          const targetPath = path.join(targetDir, fileName);
-
-          // Проверяем существует ли уже файл
-          if (fs.existsSync(targetPath)) {
-            skippedCount++;
-            savedFiles.push({
-              name: fileName,
-              path: targetPath,
-              originalPath: sourcePath,
-            });
-            continue;
-          }
-
-          fs.copyFileSync(sourcePath, targetPath);
-          copiedCount++;
-          savedFiles.push({
-            name: fileName,
-            path: targetPath,
-            originalPath: sourcePath,
-          });
-        } catch (err) {
-          console.error(`Ошибка копирования ${file.name}:`, err);
-          errorCount++;
-        }
-      }
-
-      // Сохраняем files.json с информацией о файлах
-      const filesJsonPath = path.join(targetDir, 'files.json');
-      fs.writeFileSync(filesJsonPath, JSON.stringify({ files: savedFiles, createdAt: Date.now() }, null, 2));
-
-      return { 
-        success: true, 
-        copiedCount, 
-        errorCount, 
-        skippedCount,
-        path: targetDir 
+      const sendProgress = (done = false) => {
+        mainWindow?.webContents.send('playlist-save-progress', {
+          playlistName,
+          processed,
+          total,
+          copiedCount,
+          done,
+        });
       };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
 
-  // Сохранение плейлиста (старый обработчик)
-  ipcMain.handle('save-playlist', async (event, playlistName, files) => {
-    try {
-      const result = await dialog.showOpenDialog(mainWindow, {
-        properties: ['openDirectory'],
-        defaultPath: app.getPath('videos'),
-      });
-
-      if (result.canceled || result.filePaths.length === 0) {
-        return { success: false, error: 'Отменено' };
+      if (total === 0) {
+        sendProgress(true);
+        return { success: true, copiedCount, total };
       }
 
-      const targetDir = path.join(result.filePaths[0], playlistName);
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
-
-      let copiedCount = 0;
-      for (const file of files) {
-        try {
-          let sourcePath = file.path.replace('file:///', '').replace(/^\//, '');
-          const fileName = path.basename(sourcePath);
-          fs.copyFileSync(sourcePath, path.join(targetDir, fileName));
-          copiedCount++;
-        } catch (err) {
-          console.error(`Ошибка копирования ${file.name}:`, err);
+      for (const file of inputFiles) {
+        if (!file?.path) {
+          processed += 1;
+          sendProgress(false);
+          continue;
         }
+
+        const sourcePath = normalizeFilePath(file.path);
+        if (!sourcePath || !fs.existsSync(sourcePath)) {
+          processed += 1;
+          sendProgress(false);
+          continue;
+        }
+
+        const targetPath = path.join(playlistPath, path.basename(sourcePath));
+
+        if (!fs.existsSync(targetPath)) {
+          await fs.promises.copyFile(sourcePath, targetPath);
+          copiedCount += 1;
+        }
+
+        savedFiles.push({
+          name: path.basename(targetPath),
+          path: targetPath,
+        });
+
+        processed += 1;
+        sendProgress(false);
       }
 
-      return { success: true, copiedCount, folderPath: targetDir };
+      await fs.promises.writeFile(
+        path.join(playlistPath, 'files.json'),
+        JSON.stringify({ files: savedFiles, updatedAt: Date.now() }, null, 2)
+      );
+
+      sendProgress(true);
+      return { success: true, copiedCount, total };
     } catch (error) {
-      return { success: false, error: error.message };
+      return { success: false, error: String(error?.message || error) };
     }
   });
 
-  // Экспорт плейлистов в JSON
-  ipcMain.handle('export-playlists', async (event, playlists) => {
-    try {
-      const result = await dialog.showSaveDialog(mainWindow, {
-        title: 'Экспорт плейлистов',
-        defaultPath: 'playlists-export.json',
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-      });
-
-      if (result.canceled || !result.filePath) {
-        return { success: false, error: 'Отменено' };
-      }
-
-      fs.writeFileSync(result.filePath, JSON.stringify(playlists, null, 2));
-      return { success: true, path: result.filePath };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-
-  // Импорт плейлистов из JSON
-  ipcMain.handle('import-playlists', async () => {
-    try {
-      const result = await dialog.showOpenDialog(mainWindow, {
-        properties: ['openFile'],
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-      });
-
-      if (result.canceled || result.filePaths.length === 0) {
-        return { success: false, error: 'Отменено' };
-      }
-
-      const data = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf-8'));
-      return { success: true, playlists: data };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-
-  // Показать уведомление
-  ipcMain.on('show-notification', (event, title, message) => {
+  ipcMain.on('show-notification', (_event, title, message) => {
     const notification = new Notification({
       title,
       body: message,
-      icon: path.join(__dirname, isDev ? '../public/Untitled Project (1).jpg' : '../build/Untitled Project (1).jpg'),
+      icon: APP_ICON,
     });
+
     notification.show();
   });
 
-  // Получить настройки окна
   ipcMain.handle('get-window-settings', async () => {
     if (!mainWindow) return null;
+
     const bounds = mainWindow.getBounds();
     return {
       width: bounds.width,
       height: bounds.height,
       x: bounds.x,
       y: bounds.y,
-      isMaximized: mainWindow.isMaximized(),
-      alwaysOnTop: mainWindow.isAlwaysOnTop(),
+      trayMode: trayModeEnabled,
     };
   });
 
-  // Установить настройки окна
-  ipcMain.handle('set-window-settings', async (event, settings) => {
-    if (!mainWindow) return { success: false };
-    
-    if (settings.width && settings.height) {
-      mainWindow.setSize(settings.width, settings.height);
+  ipcMain.handle('set-window-settings', async (_event, settings) => {
+    if (!mainWindow) return { success: false, error: 'Window is not ready' };
+
+    try {
+      if (settings.width && settings.height) {
+        mainWindow.setSize(Math.max(900, settings.width), Math.max(600, settings.height));
+      }
+
+      if (typeof settings.x === 'number' && typeof settings.y === 'number') {
+        mainWindow.setPosition(settings.x, settings.y);
+      }
+
+      if (typeof settings.trayMode === 'boolean') {
+        setTrayModeEnabled(settings.trayMode);
+      }
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error?.message || error) };
     }
-    if (settings.x !== undefined && settings.y !== undefined) {
-      mainWindow.setPosition(settings.x, settings.y);
+  });
+
+  ipcMain.handle('set-auto-start', async (_event, enabled) => {
+    try {
+      app.setLoginItemSettings({
+        openAtLogin: Boolean(enabled),
+        openAsHidden: true,
+      });
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error?.message || error) };
     }
-    if (settings.alwaysOnTop !== undefined) {
-      mainWindow.setAlwaysOnTop(settings.alwaysOnTop);
+  });
+
+  ipcMain.handle('get-auto-start', async () => {
+    try {
+      const settings = app.getLoginItemSettings();
+      return { success: true, enabled: Boolean(settings.openAtLogin) };
+    } catch (error) {
+      return { success: false, enabled: false, error: String(error?.message || error) };
     }
-    if (settings.isMaximized) {
+  });
+
+  ipcMain.handle('set-tray-mode', async (_event, enabled) => {
+    try {
+      setTrayModeEnabled(enabled);
+      return { success: true, enabled: trayModeEnabled };
+    } catch (error) {
+      return { success: false, enabled: trayModeEnabled, error: String(error?.message || error) };
+    }
+  });
+
+  ipcMain.handle('get-tray-mode', async () => {
+    return { success: true, enabled: trayModeEnabled };
+  });
+
+  ipcMain.handle('open-url', async (_event, url) => {
+    try {
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error?.message || error) };
+    }
+  });
+
+  ipcMain.handle('enter-picture-in-picture', async () => {
+    if (!mainWindow) return { success: false, error: 'Window is not ready' };
+
+    mainWindow.setAlwaysOnTop(true, 'screen-saver');
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    return { success: true };
+  });
+
+  ipcMain.handle('exit-picture-in-picture', async () => {
+    if (!mainWindow) return { success: false, error: 'Window is not ready' };
+
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setVisibleOnAllWorkspaces(false);
+    return { success: true };
+  });
+
+  ipcMain.on('minimize-window', () => {
+    mainWindow?.minimize();
+  });
+
+  ipcMain.on('maximize-window', () => {
+    if (!mainWindow) return;
+
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
       mainWindow.maximize();
     }
-    
-    return { success: true };
   });
 
-  // Логирование в файл
-  ipcMain.handle('log-to-file', async (event, level, message) => {
-    const logDir = path.join(app.getPath('userData'), 'logs');
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
+  ipcMain.on('close-window', () => {
+    if (trayModeEnabled) {
+      hideMainWindowToTray();
+      return;
     }
-    
-    const date = new Date().toISOString().split('T')[0];
-    const logFile = path.join(logDir, `${date}.log`);
-    const timestamp = new Date().toISOString();
-    const logEntry = `[${timestamp}] [${level.toUpperCase()}] ${message}\n`;
-    
-    fs.appendFileSync(logFile, logEntry);
-    return { success: true };
-  });
 
-  // Открыть URL в браузере
-  ipcMain.handle('open-url', async (event, url) => {
-    const { shell } = require('electron');
-    await shell.openExternal(url);
-    return { success: true };
-  });
-
-  // Тестовый обработчик для проверки связи
-  ipcMain.handle('test-connection', async () => {
-    console.log('Test connection called');
-    return { success: true, message: 'Connection OK' };
-  });
-
-  // Получить информацию о видео YouTube (заглушка)
-  ipcMain.handle('youtube-get-info', async () => {
-    return { 
-      success: false, 
-      error: 'Скачивание YouTube временно недоступно.' 
-    };
-  });
-
-  // Скачать видео YouTube (заглушка)
-  ipcMain.handle('youtube-download', async () => {
-    return { 
-      success: false, 
-      error: 'Скачивание YouTube временно недоступно.' 
-    };
+    mainWindow?.close();
   });
 }
 
-app.on('ready', () => {
-  // Получаем файл из аргументов командной строки
-  const args = process.argv;
-  const filePath = args.find(arg => 
-    arg !== '.' && 
-    !arg.startsWith('--') && 
-    !arg.startsWith('-') &&
-    isValidMediaFile(arg)
-  );
-  
-  if (filePath) {
-    pendingFilePath = filePath;
+app.on('second-instance', (_event, commandLine) => {
+  if (mainWindow) {
+    showMainWindow();
   }
-  
-  createWindow(filePath);
+
+  const files = extractMediaFiles(commandLine);
+  if (files.length > 0) {
+    queueFilesForOpen(files);
+  }
+});
+
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  if (!filePath || !isValidMediaFile(filePath)) return;
+
+  queueFilesForOpen([filePath]);
+});
+
+app.on('before-quit', () => {
+  isQuitting = true;
+  destroyTray();
+});
+
+app.whenReady().then(() => {
+  app.setAppUserModelId('com.mediaplayer.app');
+
+  ensurePlaylistsDirectory();
+  setupIpcHandlers();
+  createSplashWindow();
+  createMainWindow();
+
+  if (trayModeEnabled) {
+    createTray();
+  }
+
+  const startupFiles = extractMediaFiles(process.argv);
+  if (startupFiles.length > 0) {
+    queueFilesForOpen(startupFiles);
+  }
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform !== 'darwin' && !trayModeEnabled) {
+    app.quit();
+  }
 });
 
 app.on('activate', () => {
-  if (mainWindow === null) createWindow();
-});
-
-// Обработка открытия файлов через проводник (Windows)
-// Предотвращаем открытие второго окна
-app.on('second-instance', (event, commandLine) => {
-  event.preventDefault();
-  
-  if (mainWindow) {
-    // Фокусируем существующее окно
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-    
-    // Отправляем путь к файлу в существующее приложение
-    const filePath = commandLine.pop();
-    if (filePath && isValidMediaFile(filePath)) {
-      console.log('Opening file in existing window:', filePath);
-      mainWindow.webContents.send('file-opened', [filePath]);
-    }
+  if (!mainWindow) {
+    createSplashWindow();
+    createMainWindow();
+    return;
   }
-});
 
-// Проверка расширения файла
-function isValidMediaFile(filePath) {
-  if (!filePath) return false;
-  const ext = path.extname(filePath).toLowerCase().slice(1);
-  const validExts = ['mp4', 'webm', 'mkv', 'avi', 'mov', 'mp3', 'wav', 'flac', 'jpg', 'png', 'webp'];
-  return validExts.includes(ext);
-}
-
-// Обработка открытия файла через double-click (macOS и Linux)
-app.on('open-file', (event, filePath) => {
-  event.preventDefault();
-  if (mainWindow && isValidMediaFile(filePath)) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-    mainWindow.webContents.send('file-opened', [filePath]);
-  }
+  showMainWindow();
 });

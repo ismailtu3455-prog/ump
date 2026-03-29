@@ -1,121 +1,52 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '@hooks/useRedux';
 import { removeNotification } from '@store/uiSlice';
-import { Notification } from '@/types';
 
-interface NotificationWithClosing extends Notification {
-  isClosing?: boolean;
-}
+const notificationStyle: Record<string, string> = {
+  success: 'border-emerald-300/30 bg-emerald-500/15 text-emerald-100',
+  error: 'border-rose-300/30 bg-rose-500/15 text-rose-100',
+  warning: 'border-amber-300/30 bg-amber-500/15 text-amber-100',
+  info: 'border-sky-300/30 bg-sky-500/15 text-sky-100',
+};
 
 function Notifications() {
   const dispatch = useAppDispatch();
-  const notifications = useAppSelector(state => state.ui.notifications);
-  const [notificationsWithState, setNotificationsWithState] = useState<NotificationWithClosing[]>([]);
+  const notifications = useAppSelector((state) => state.ui.notifications);
 
-  // Добавляем новые уведомления
   useEffect(() => {
-    setNotificationsWithState(prev => {
-      const newIds = new Set(notifications.map(n => n.id));
-      const filtered = prev.filter(n => newIds.has(n.id));
-      
-      for (const notif of notifications) {
-        if (!prev.find(p => p.id === notif.id)) {
-          filtered.push({ ...notif, isClosing: false });
-        }
-      }
-      
-      return filtered;
+    if (notifications.length === 0) return;
+
+    const timers = notifications.map((notification) => {
+      return window.setTimeout(() => {
+        dispatch(removeNotification(notification.id));
+      }, 2200);
     });
-  }, [notifications]);
 
-  // Автоудаление через 5 секунд
-  useEffect(() => {
-    const timers = notifications.map(notif =>
-      setTimeout(() => {
-        handleClose(notif.id);
-      }, 5000)
-    );
-    
     return () => {
-      timers.forEach(timer => clearTimeout(timer));
+      timers.forEach((timer) => window.clearTimeout(timer));
     };
-  }, [notifications]);
-
-  const handleClose = (id: string) => {
-    setNotificationsWithState(prev =>
-      prev.map(n => n.id === id ? { ...n, isClosing: true } : n)
-    );
-
-    setTimeout(() => {
-      dispatch(removeNotification(id));
-      setNotificationsWithState(prev => prev.filter(n => n.id !== id));
-    }, 300);
-  };
-
-  const getNotificationStyles = (type: string) => {
-    switch (type) {
-      case 'success':
-        return 'bg-green-600 border-green-500';
-      case 'error':
-        return 'bg-red-600 border-red-500';
-      case 'warning':
-        return 'bg-yellow-600 border-yellow-500';
-      default:
-        return 'bg-dark-700 border-dark-600';
-    }
-  };
-
-  const getNotificationIcon = (type: string) => {
-    switch (type) {
-      case 'success':
-        return (
-          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-          </svg>
-        );
-      case 'error':
-        return (
-          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-          </svg>
-        );
-      case 'warning':
-        return (
-          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
-          </svg>
-        );
-      default:
-        return (
-          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
-          </svg>
-        );
-    }
-  };
+  }, [dispatch, notifications]);
 
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2">
-      {notificationsWithState.map(notif => (
+    <div className="pointer-events-none fixed right-5 top-5 z-[80] flex w-[340px] flex-col gap-3">
+      {notifications.map((notification) => (
         <div
-          key={notif.id}
-          className={`flex items-start gap-3 p-4 rounded-lg border shadow-lg min-w-[300px] max-w-md transition-all duration-300 ${
-            notif.isClosing ? 'animate-slideOutRight opacity-0' : 'animate-slideInRight'
-          } ${getNotificationStyles(notif.type)}`}
+          key={notification.id}
+          className={`pointer-events-auto animate-notification rounded-2xl border px-4 py-3 shadow-soft backdrop-blur-lg ${notificationStyle[notification.type] || notificationStyle.info}`}
         >
-          <div className="flex-shrink-0">{getNotificationIcon(notif.type)}</div>
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-white text-sm">{notif.title}</p>
-            <p className="text-xs text-white/80 mt-1">{notif.message}</p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">{notification.title}</p>
+              <p className="mt-1 text-xs opacity-90">{notification.message}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => dispatch(removeNotification(notification.id))}
+              className="rounded-lg px-2 py-1 text-xs text-white/70 transition hover:bg-white/10 hover:text-white"
+            >
+              x
+            </button>
           </div>
-          <button
-            onClick={() => handleClose(notif.id)}
-            className="flex-shrink-0 p-1 hover:bg-white/10 rounded transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
         </div>
       ))}
     </div>
@@ -123,3 +54,4 @@ function Notifications() {
 }
 
 export default Notifications;
+

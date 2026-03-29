@@ -58,10 +58,6 @@ const playerSlice = createSlice({
     setError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload;
     },
-    clearError: (state) => {
-      state.error = null;
-    },
-    reset: () => initialState,
   },
 });
 
@@ -78,8 +74,6 @@ export const {
   toggleFullscreen,
   setLoading,
   setError,
-  clearError,
-  reset,
 } = playerSlice.actions;
 
 export default playerSlice.reducer;
