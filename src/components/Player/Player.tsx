@@ -25,6 +25,13 @@ import { addNotification } from '@store/uiSlice';
 import { createMediaFileFromFile, formatDuration, safeFileName } from '@utils/fileUtils';
 import { translations } from '@utils/translations';
 
+const ZOOM_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4, 4.5, 5] as const;
+const DEFAULT_ZOOM = 1;
+
+function clampPercent(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
 interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   label: string;
   active?: boolean;
@@ -33,6 +40,7 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 type PlayerCommand =
   | 'toggle'
+  | 'stop'
   | 'next'
   | 'previous'
   | 'toggle-repeat'
@@ -79,21 +87,26 @@ function Player() {
   const nextTrackTimeoutRef = useRef<number | null>(null);
   const nextTrackIntervalRef = useRef<number | null>(null);
   const speedMenuRef = useRef<HTMLDivElement>(null);
+  const zoomMenuRef = useRef<HTMLDivElement>(null);
   const previousPlaylistIdRef = useRef(activePlaylistId);
 
   const [showControls, setShowControls] = useState(true);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isSeeking, setIsSeeking] = useState(false);
-  const [imageScale, setImageScale] = useState(1);
+  const [zoomScale, setZoomScale] = useState(DEFAULT_ZOOM);
+  const [zoomOrigin, setZoomOrigin] = useState({ x: 50, y: 50 });
   const [nextCountdown, setNextCountdown] = useState<number | null>(null);
   const [seekMax, setSeekMax] = useState(0);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [showZoomMenu, setShowZoomMenu] = useState(false);
 
   const activePlaylist = useMemo(
     () => playlists.find((playlist) => playlist.id === activePlaylistId),
     [activePlaylistId, playlists]
   );
   const speedOptions = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  const canZoomMedia = currentFile?.type === 'video' || currentFile?.type === 'image';
+  const zoomPercent = Math.round(zoomScale * 100);
 
   const repeatLabel = useMemo(() => {
     if (repeatMode === 'all') return t.repeatAll;
@@ -125,6 +138,18 @@ function Player() {
           if (!currentFile || currentFile.type === 'image') return;
           clearNextTrackTimers();
           dispatch(togglePlay());
+          return;
+        }
+        case 'stop': {
+          if (!currentFile || currentFile.type === 'image') return;
+          clearNextTrackTimers();
+          dispatch(setIsPlaying(false));
+          dispatch(setCurrentTime(0));
+
+          if (media) {
+            media.pause();
+            media.currentTime = 0;
+          }
           return;
         }
         case 'previous': {
@@ -229,17 +254,20 @@ function Player() {
   }, [isSeeking]);
 
   useEffect(() => {
-    if (!showSpeedMenu) return;
+    if (!showSpeedMenu && !showZoomMenu) return;
 
     const onPointerDown = (event: MouseEvent) => {
-      if (!speedMenuRef.current) return;
-      if (speedMenuRef.current.contains(event.target as Node)) return;
+      const target = event.target as Node;
+      if (speedMenuRef.current?.contains(target)) return;
+      if (zoomMenuRef.current?.contains(target)) return;
       setShowSpeedMenu(false);
+      setShowZoomMenu(false);
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setShowSpeedMenu(false);
+        setShowZoomMenu(false);
       }
     };
 
@@ -249,7 +277,13 @@ function Player() {
       window.removeEventListener('mousedown', onPointerDown);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [showSpeedMenu]);
+  }, [showSpeedMenu, showZoomMenu]);
+
+  useEffect(() => {
+    setZoomScale(DEFAULT_ZOOM);
+    setZoomOrigin({ x: 50, y: 50 });
+    setShowZoomMenu(false);
+  }, [currentFile?.id]);
 
   useEffect(() => {
     const handleCustomCommand = (event: Event) => {
@@ -258,7 +292,7 @@ function Player() {
     };
 
     const handleIpcCommand = (payload: string) => {
-      if (payload === 'toggle' || payload === 'next' || payload === 'previous') {
+      if (payload === 'toggle' || payload === 'stop' || payload === 'next' || payload === 'previous') {
         executeCommand(payload);
       }
     };
@@ -486,6 +520,49 @@ function Player() {
     setShowSpeedMenu(false);
   };
 
+  const handleZoomChange = (scale: number) => {
+    setZoomScale(scale);
+    setZoomOrigin({ x: 50, y: 50 });
+    setShowZoomMenu(false);
+  };
+
+  const handleMediaWheelZoom = (event: React.WheelEvent<HTMLElement>) => {
+    if (!canZoomMedia) return;
+    if (event.deltaY === 0) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const zoomDirection = event.deltaY < 0 ? 1 : -1;
+    const currentIndex = ZOOM_OPTIONS.findIndex((option) => option === zoomScale);
+    const safeIndex = currentIndex === -1 ? ZOOM_OPTIONS.indexOf(DEFAULT_ZOOM) : currentIndex;
+    const nextIndex = Math.max(0, Math.min(ZOOM_OPTIONS.length - 1, safeIndex + zoomDirection));
+
+    if (nextIndex === safeIndex) return;
+
+    if (event.ctrlKey) {
+      setZoomOrigin({ x: 50, y: 50 });
+    } else {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const x = rect.width > 0 ? ((event.clientX - rect.left) / rect.width) * 100 : 50;
+      const y = rect.height > 0 ? ((event.clientY - rect.top) / rect.height) * 100 : 50;
+      setZoomOrigin({
+        x: clampPercent(x),
+        y: clampPercent(y),
+      });
+    }
+
+    setZoomScale(ZOOM_OPTIONS[nextIndex]);
+  };
+
+  const mediaZoomStyle = canZoomMedia
+    ? {
+        transform: `scale(${zoomScale})`,
+        transformOrigin: `${zoomOrigin.x}% ${zoomOrigin.y}%`,
+        transition: 'transform 120ms ease-out',
+      }
+    : undefined;
+
   const handleFullscreen = async () => {
     if (!containerRef.current) return;
 
@@ -614,7 +691,7 @@ function Player() {
           src={currentFile.path}
           alt={currentFile.name}
           className="max-h-full max-w-full rounded-2xl object-contain shadow-soft"
-          style={{ transform: `scale(${imageScale})` }}
+          style={mediaZoomStyle}
         />
       );
     }
@@ -655,8 +732,10 @@ function Player() {
       <video
         ref={videoRef}
         className={`h-full w-full object-contain ${currentFile?.type === 'video' ? 'block' : 'hidden'}`}
+        style={mediaZoomStyle}
         preload="auto"
         onClick={toggleByMediaClick}
+        onWheel={handleMediaWheelZoom}
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
         onLoadedMetadata={() => {
@@ -702,24 +781,10 @@ function Player() {
           currentFile?.type === 'video' ? 'pointer-events-none' : ''
         }`}
         onClick={toggleByMediaClick}
+        onWheel={handleMediaWheelZoom}
       >
         {mediaVisual}
       </div>
-
-      {currentFile?.type === 'image' && (
-        <div className="absolute right-4 top-4 z-20 flex items-center gap-2 rounded-xl border border-white/20 bg-slate-900/70 px-2 py-1 text-xs text-white backdrop-blur">
-          <button type="button" className="px-1.5" onClick={() => setImageScale((v) => Math.max(0.5, v - 0.1))}>
-            -
-          </button>
-          <span>{Math.round(imageScale * 100)}%</span>
-          <button type="button" className="px-1.5" onClick={() => setImageScale((v) => Math.min(3, v + 0.1))}>
-            +
-          </button>
-          <button type="button" className="px-1.5" onClick={() => setImageScale(1)}>
-            1:1
-          </button>
-        </div>
-      )}
 
       {isLoading && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/65">
@@ -828,7 +893,10 @@ function Player() {
                   <span className="text-xs text-white/75">{t.speed}</span>
                   <button
                     type="button"
-                    onClick={() => setShowSpeedMenu((value) => !value)}
+                    onClick={() => {
+                      setShowZoomMenu(false);
+                      setShowSpeedMenu((value) => !value);
+                    }}
                     className="player-speed-trigger rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs text-white transition hover:bg-white/20"
                   >
                     {playbackRate}x
@@ -852,6 +920,46 @@ function Player() {
                     </div>
                   )}
                 </div>
+
+                {canZoomMedia && (
+                  <div
+                    ref={zoomMenuRef}
+                    className="player-speed-panel relative flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-2 py-1.5"
+                  >
+                    <span className="text-xs text-white/75">{t.zoom}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSpeedMenu(false);
+                        setShowZoomMenu((value) => !value);
+                      }}
+                      className="player-speed-trigger rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs text-white transition hover:bg-white/20"
+                    >
+                      {zoomPercent}%
+                    </button>
+                    {showZoomMenu && (
+                      <div className="speed-menu absolute bottom-[calc(100%+8px)] right-0 z-50 min-w-[110px] rounded-xl border border-white/15 bg-slate-900/95 p-1.5 shadow-soft backdrop-blur">
+                        {ZOOM_OPTIONS.map((option) => {
+                          const optionPercent = Math.round(option * 100);
+                          const isActive = zoomScale === option;
+
+                          return (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => handleZoomChange(option)}
+                              className={`speed-menu-item w-full rounded-lg px-2 py-1.5 text-left text-xs transition ${
+                                isActive ? 'bg-white/25 text-white' : 'text-white/85 hover:bg-white/10'
+                              }`}
+                            >
+                              {optionPercent}%
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <IconButton onClick={() => dispatch(toggleMute())} label={t.volume}>
                   {isMuted || volume === 0 ? (

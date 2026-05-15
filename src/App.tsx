@@ -5,6 +5,7 @@ import { setCurrentFile, setIsPlaying } from '@store/playerSlice';
 import {
   addNotification,
   setAutoSaveOnAdd,
+  setGlobalHotkeys,
   setHotkeys,
   setLanguage,
   setPlayerSettings,
@@ -31,6 +32,7 @@ function App() {
   const language = useAppSelector((state) => state.ui.language);
   const windowSettings = useAppSelector((state) => state.ui.windowSettings);
   const hotkeys = useAppSelector((state) => state.ui.hotkeys);
+  const globalHotkeys = useAppSelector((state) => state.ui.globalHotkeys);
   const autoSaveOnAdd = useAppSelector((state) => state.ui.autoSaveOnAdd);
   const activePlaylistId = useAppSelector((state) => state.playlist.activePlaylistId);
   const playlists = useAppSelector((state) => state.playlist.playlists);
@@ -108,10 +110,18 @@ function App() {
       dispatch(setHotkeys(saved.hotkeys));
     }
 
+    if (saved.globalHotkeys) {
+      dispatch(setGlobalHotkeys(saved.globalHotkeys));
+    }
+
     if (typeof saved.autoSaveOnAdd === 'boolean') {
       dispatch(setAutoSaveOnAdd(saved.autoSaveOnAdd));
     }
   }, [dispatch]);
+
+  useEffect(() => {
+    window.electronAPI?.setGlobalHotkeys(globalHotkeys).catch(() => undefined);
+  }, [globalHotkeys]);
 
   useEffect(() => {
     const handleOpenedFiles = (payload: string[] | string) => {
@@ -122,6 +132,7 @@ function App() {
     window.electronAPI?.on('files-selected', handleOpenedFiles);
     window.electronAPI?.on('file-opened', handleOpenedFiles);
     window.electronAPI?.on('files-opened', handleOpenedFiles);
+    window.electronAPI?.send('renderer-ready');
 
     return () => {
       window.electronAPI?.off('files-selected', handleOpenedFiles);

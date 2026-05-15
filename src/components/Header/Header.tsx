@@ -18,6 +18,7 @@ function Header({ onToggleSidebar, onOpenSettings }: HeaderProps) {
   const isSidebarOpen = useAppSelector((state) => state.ui.isSidebarOpen);
   const language = useAppSelector((state) => state.ui.language);
   const t = translations[language];
+  const pasteLabel = language === 'ru' ? 'Вставить' : 'Paste';
 
   const fileLabel = useMemo(() => {
     if (!currentFile) return t.noMediaHint;
@@ -31,6 +32,10 @@ function Header({ onToggleSidebar, onOpenSettings }: HeaderProps) {
     }
 
     window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const openPaste = () => {
+    window.dispatchEvent(new CustomEvent('ump-open-paste'));
   };
 
   return (
@@ -88,6 +93,18 @@ function Header({ onToggleSidebar, onOpenSettings }: HeaderProps) {
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
             <path d="M12 .5a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.2.8-.6v-2c-3.3.7-4-1.4-4-1.4-.6-1.5-1.3-1.8-1.3-1.8-1.1-.8.1-.8.1-.8 1.2.1 1.9 1.3 1.9 1.3 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.7-2.7-.3-5.6-1.3-5.6-6A4.7 4.7 0 0 1 6.7 7c-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11 11 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1a4.7 4.7 0 0 1 1.2 3.3c0 4.7-2.9 5.7-5.6 6 .4.3.8 1 .8 2.1v3.1c0 .4.2.7.8.6A11.5 11.5 0 0 0 12 .5Z" />
+          </svg>
+        </button>
+
+        <button
+          type="button"
+          onClick={openPaste}
+          className="tooltip-trigger interactive-btn rounded-lg px-2.5 py-1.5 text-white/85"
+          data-tooltip={pasteLabel}
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M7 12h10M12 7l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M5 5h7v2H7v10h5v2H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
 

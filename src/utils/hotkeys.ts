@@ -1,4 +1,4 @@
-import { HotkeyAction, Hotkeys } from '@/types';
+import { GlobalHotkeyAction, GlobalHotkeys, HotkeyAction, Hotkeys } from '@/types';
 
 const MODIFIER_ORDER = ['Ctrl', 'Alt', 'Shift'] as const;
 
@@ -19,6 +19,13 @@ export const DEFAULT_HOTKEYS: Hotkeys = {
   openFiles: 'Ctrl+O',
 };
 
+export const DEFAULT_GLOBAL_HOTKEYS: GlobalHotkeys = {
+  togglePlayPause: 'Ctrl+Alt+Shift+F9',
+  previousTrack: 'Ctrl+Alt+Shift+F10',
+  nextTrack: 'Ctrl+Alt+Shift+F11',
+  toggleWindow: 'Ctrl+Alt+Shift+F8',
+};
+
 export const HOTKEY_ACTION_ORDER: HotkeyAction[] = [
   'togglePlayPause',
   'previousTrack',
@@ -34,6 +41,13 @@ export const HOTKEY_ACTION_ORDER: HotkeyAction[] = [
   'toggleMute',
   'toggleFullscreen',
   'openFiles',
+];
+
+export const GLOBAL_HOTKEY_ACTION_ORDER: GlobalHotkeyAction[] = [
+  'togglePlayPause',
+  'previousTrack',
+  'nextTrack',
+  'toggleWindow',
 ];
 
 function normalizeKeyName(key: string) {

@@ -1,4 +1,4 @@
-import { Language, ThemeMode, WindowSettings, PlayerSettings, Hotkeys } from '@/types';
+import { GlobalHotkeys, Hotkeys, Language, ThemeMode, WindowSettings, PlayerSettings } from '@/types';
 
 const STORAGE_KEY = 'ump.settings.v2';
 
@@ -8,6 +8,7 @@ export interface PersistedSettings {
   windowSettings: Pick<WindowSettings, 'opacity' | 'accentColor' | 'autoStart' | 'trayMode'>;
   playerSettings: Pick<PlayerSettings, 'delayEnabled' | 'playbackDelaySec'>;
   hotkeys: Hotkeys;
+  globalHotkeys: GlobalHotkeys;
   autoSaveOnAdd: boolean;
 }
 

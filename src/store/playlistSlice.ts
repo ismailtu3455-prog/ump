@@ -3,6 +3,10 @@ import { PlaylistState, Playlist, MediaFile, RepeatMode } from '@/types';
 
 const createPlaylistId = () => `pl_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
+function cloneMediaFile(file: MediaFile): MediaFile {
+  return { ...file };
+}
+
 const initialState: PlaylistState = {
   playlists: [
     {
@@ -41,13 +45,25 @@ const playlistSlice = createSlice({
       state.activePlaylistId = newPlaylist.id;
       state.currentIndex = -1;
     },
-    createPlaylistWithFiles: (state, action: PayloadAction<{ playlist: Playlist }>) => {
-      const existing = state.playlists.find((item) => item.id === action.payload.playlist.id);
+    createPlaylistWithFiles: (
+      state,
+      action: PayloadAction<{ playlist: Playlist; activate?: boolean }>
+    ) => {
+      const incoming = action.payload.playlist;
+      const shouldActivate = action.payload.activate !== false;
+      const existing = state.playlists.find((item) => item.id === incoming.id);
       if (existing) return;
 
-      state.playlists.push(action.payload.playlist);
-      state.activePlaylistId = action.payload.playlist.id;
-      state.currentIndex = action.payload.playlist.files.length > 0 ? 0 : -1;
+      const normalizedPlaylist: Playlist = {
+        ...incoming,
+        files: Array.isArray(incoming.files) ? incoming.files.map((file) => cloneMediaFile(file)) : [],
+      };
+
+      state.playlists.push(normalizedPlaylist);
+      if (shouldActivate) {
+        state.activePlaylistId = normalizedPlaylist.id;
+        state.currentIndex = normalizedPlaylist.files.length > 0 ? 0 : -1;
+      }
     },
     deletePlaylist: (state, action: PayloadAction<string>) => {
       const target = state.playlists.find((playlist) => playlist.id === action.payload);
@@ -88,7 +104,7 @@ const playlistSlice = createSlice({
 
       if (uniqueFiles.length === 0) return;
 
-      playlist.files.push(...uniqueFiles);
+      playlist.files.push(...uniqueFiles.map((file) => cloneMediaFile(file)));
       playlist.updatedAt = Date.now();
 
       if (state.currentIndex === -1 && playlist.id === state.activePlaylistId) {

@@ -1,10 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '@hooks/useRedux';
-import { addNotification, setHotkeys, setLanguage, setPlayerSettings, setTheme, setWindowSettings } from '@store/uiSlice';
-import { DEFAULT_HOTKEYS, HOTKEY_ACTION_ORDER, keyboardEventToHotkey } from '@utils/hotkeys';
+import {
+  addNotification,
+  setAutoSaveOnAdd,
+  setGlobalHotkeys,
+  setHotkeys,
+  setLanguage,
+  setPlayerSettings,
+  setTheme,
+  setWindowSettings,
+} from '@store/uiSlice';
+import {
+  DEFAULT_GLOBAL_HOTKEYS,
+  DEFAULT_HOTKEYS,
+  GLOBAL_HOTKEY_ACTION_ORDER,
+  HOTKEY_ACTION_ORDER,
+  keyboardEventToHotkey,
+} from '@utils/hotkeys';
 import { saveSettings } from '@utils/settingsStorage';
 import { translations } from '@utils/translations';
-import { HotkeyAction } from '@/types';
+import { GlobalHotkeyAction, HotkeyAction } from '@/types';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -12,6 +27,11 @@ interface SettingsModalProps {
 }
 
 const accentPresets = ['#4f9dff', '#ff6b6b', '#20c997', '#f59f00', '#b197fc', '#ff922b'];
+
+type EditingHotkeyState =
+  | { scope: 'local'; action: HotkeyAction }
+  | { scope: 'global'; action: GlobalHotkeyAction }
+  | null;
 
 function ToggleRow({
   label,
@@ -51,6 +71,7 @@ function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const windowSettings = useAppSelector((state) => state.ui.windowSettings);
   const playerSettings = useAppSelector((state) => state.ui.playerSettings);
   const hotkeys = useAppSelector((state) => state.ui.hotkeys);
+  const globalHotkeys = useAppSelector((state) => state.ui.globalHotkeys);
   const autoSaveOnAdd = useAppSelector((state) => state.ui.autoSaveOnAdd);
 
   const t = translations[language];
@@ -65,7 +86,9 @@ function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [delayEnabled, setDelayEnabled] = useState(playerSettings.delayEnabled);
   const [playbackDelaySec, setPlaybackDelaySec] = useState(playerSettings.playbackDelaySec);
   const [localHotkeys, setLocalHotkeys] = useState(hotkeys);
-  const [editingHotkey, setEditingHotkey] = useState<HotkeyAction | null>(null);
+  const [localGlobalHotkeys, setLocalGlobalHotkeys] = useState(globalHotkeys);
+  const [localAutoSaveOnAdd, setLocalAutoSaveOnAdd] = useState(autoSaveOnAdd);
+  const [editingHotkey, setEditingHotkey] = useState<EditingHotkeyState>(null);
 
   const isHydratingRef = useRef(false);
   const normalizedDelay = Math.max(0, Math.min(30, playbackDelaySec));
@@ -86,6 +109,16 @@ function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       toggleMute: t.hkToggleMute,
       toggleFullscreen: t.hkToggleFullscreen,
       openFiles: t.hkOpenFiles,
+    }),
+    [t]
+  );
+
+  const globalHotkeyLabels = useMemo(
+    () => ({
+      togglePlayPause: t.hkGlobalTogglePlayPause,
+      previousTrack: t.hkGlobalPreviousTrack,
+      nextTrack: t.hkGlobalNextTrack,
+      toggleWindow: t.hkGlobalToggleWindow,
     }),
     [t]
   );
@@ -111,14 +144,19 @@ function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     );
 
     dispatch(setHotkeys(localHotkeys));
+    dispatch(setGlobalHotkeys(localGlobalHotkeys));
+    dispatch(setAutoSaveOnAdd(localAutoSaveOnAdd));
 
     await window.electronAPI?.setTrayMode(trayMode).catch(() => undefined);
     await window.electronAPI?.setAutoStart(autoStart).catch(() => undefined);
+    await window.electronAPI?.setGlobalHotkeys(localGlobalHotkeys).catch(() => undefined);
   }, [
     accentColor,
     autoStart,
     delayEnabled,
     dispatch,
+    localAutoSaveOnAdd,
+    localGlobalHotkeys,
     localHotkeys,
     localLanguage,
     localTheme,
@@ -127,6 +165,8 @@ function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     trayMode,
   ]);
 
+  // Re-hydrate local form state only when modal is opened.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!isOpen) return;
 
@@ -142,6 +182,8 @@ function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setDelayEnabled(playerSettings.delayEnabled);
     setPlaybackDelaySec(playerSettings.playbackDelaySec);
     setLocalHotkeys(hotkeys);
+    setLocalGlobalHotkeys(globalHotkeys);
+    setLocalAutoSaveOnAdd(autoSaveOnAdd);
 
     window.electronAPI
       ?.getAutoStart()
@@ -165,7 +207,7 @@ function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           isHydratingRef.current = false;
         }, 0);
       });
-  }, [isOpen]);
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isOpen) return;
@@ -182,6 +224,7 @@ function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     autoStart,
     delayEnabled,
     isOpen,
+    localAutoSaveOnAdd,
     localHotkeys,
     localLanguage,
     localTheme,
@@ -205,7 +248,11 @@ function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       const combo = keyboardEventToHotkey(event);
       if (!combo) return;
 
-      setLocalHotkeys((prev) => ({ ...prev, [editingHotkey]: combo }));
+      if (editingHotkey.scope === 'local') {
+        setLocalHotkeys((prev) => ({ ...prev, [editingHotkey.action]: combo }));
+      } else {
+        setLocalGlobalHotkeys((prev) => ({ ...prev, [editingHotkey.action]: combo }));
+      }
       setEditingHotkey(null);
     };
 
@@ -232,7 +279,8 @@ function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         playbackDelaySec: normalizedDelay,
       },
       hotkeys: localHotkeys,
-      autoSaveOnAdd,
+      globalHotkeys: localGlobalHotkeys,
+      autoSaveOnAdd: localAutoSaveOnAdd,
     });
 
     dispatch(
@@ -246,6 +294,10 @@ function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const handleResetHotkeys = () => {
     setLocalHotkeys(DEFAULT_HOTKEYS);
+  };
+
+  const handleResetGlobalHotkeys = () => {
+    setLocalGlobalHotkeys(DEFAULT_GLOBAL_HOTKEYS);
   };
 
   return (
@@ -402,7 +454,11 @@ function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 checked={trayMode}
                 onChange={setTrayMode}
               />
-              <ToggleRow label={t.autoStart} checked={autoStart} onChange={setAutoStart} />
+              <ToggleRow
+                label={localLanguage === 'ru' ? 'Автосохранение при добавлении' : 'Auto-save on add'}
+                checked={localAutoSaveOnAdd}
+                onChange={setLocalAutoSaveOnAdd}
+              />
             </section>
 
             <section className="space-y-2">
@@ -432,37 +488,86 @@ function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
         {activeTab === 'hotkeys' && (
           <div className="space-y-3">
-            <div className="mb-1 flex items-center justify-between">
-              <p className="text-sm text-white/70">{t.hkPressHint}</p>
-              <button
-                type="button"
-                onClick={handleResetHotkeys}
-                className="interactive-btn rounded-lg px-3 py-1.5 text-xs text-white/85"
-              >
-                {t.hkReset}
-              </button>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm text-white/70">{t.hkPressHint}</p>
+                <button
+                  type="button"
+                  onClick={handleResetHotkeys}
+                  className="interactive-btn rounded-lg px-3 py-1.5 text-xs text-white/85"
+                >
+                  {t.hkReset}
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {HOTKEY_ACTION_ORDER.map((action) => {
+                  const isEditing =
+                    editingHotkey?.scope === 'local' && editingHotkey.action === action;
+
+                  return (
+                    <div
+                      key={action}
+                      className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+                    >
+                      <span className="text-sm text-white">{hotkeyLabels[action]}</span>
+                      <button
+                        type="button"
+                        onClick={() => setEditingHotkey({ scope: 'local', action })}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                          isEditing
+                            ? 'border-amber-300/60 bg-amber-500/20 text-amber-100'
+                            : 'border-white/20 bg-white/10 text-white/90 hover:bg-white/20'
+                        }`}
+                      >
+                        {isEditing ? t.hkRecording : localHotkeys[action]}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="space-y-2">
-              {HOTKEY_ACTION_ORDER.map((action) => (
-                <div
-                  key={action}
-                  className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm text-white/70">{t.globalHotkeysTitle}</p>
+                <button
+                  type="button"
+                  onClick={handleResetGlobalHotkeys}
+                  className="interactive-btn rounded-lg px-3 py-1.5 text-xs text-white/85"
                 >
-                  <span className="text-sm text-white">{hotkeyLabels[action]}</span>
-                  <button
-                    type="button"
-                    onClick={() => setEditingHotkey(action)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-                      editingHotkey === action
-                        ? 'border-amber-300/60 bg-amber-500/20 text-amber-100'
-                        : 'border-white/20 bg-white/10 text-white/90 hover:bg-white/20'
-                    }`}
-                  >
-                    {editingHotkey === action ? t.hkRecording : localHotkeys[action]}
-                  </button>
-                </div>
-              ))}
+                  {t.hkReset}
+                </button>
+              </div>
+
+              <p className="mb-2 text-xs text-white/55">{t.globalHotkeysHint}</p>
+
+              <div className="space-y-2">
+                {GLOBAL_HOTKEY_ACTION_ORDER.map((action) => {
+                  const isEditing =
+                    editingHotkey?.scope === 'global' && editingHotkey.action === action;
+
+                  return (
+                    <div
+                      key={action}
+                      className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+                    >
+                      <span className="text-sm text-white">{globalHotkeyLabels[action]}</span>
+                      <button
+                        type="button"
+                        onClick={() => setEditingHotkey({ scope: 'global', action })}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                          isEditing
+                            ? 'border-amber-300/60 bg-amber-500/20 text-amber-100'
+                            : 'border-white/20 bg-white/10 text-white/90 hover:bg-white/20'
+                        }`}
+                      >
+                        {isEditing ? t.hkRecording : localGlobalHotkeys[action]}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}

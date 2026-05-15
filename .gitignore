@@ -32,3 +32,4 @@ temp_*.js
 # Environment
 .env
 .env.local
+dist-app/

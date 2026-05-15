@@ -1,6 +1,6 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { UIState, Notification } from '@/types';
-import { DEFAULT_HOTKEYS } from '@utils/hotkeys';
+import { DEFAULT_GLOBAL_HOTKEYS, DEFAULT_HOTKEYS } from '@utils/hotkeys';
 
 const initialState: UIState = {
   isSidebarOpen: true,
@@ -19,6 +19,7 @@ const initialState: UIState = {
     playbackDelaySec: 0,
   },
   hotkeys: DEFAULT_HOTKEYS,
+  globalHotkeys: DEFAULT_GLOBAL_HOTKEYS,
   autoSaveOnAdd: false,
   notifications: [],
 };
@@ -47,6 +48,9 @@ const uiSlice = createSlice({
     },
     setHotkeys: (state, action: PayloadAction<Partial<UIState['hotkeys']>>) => {
       state.hotkeys = { ...state.hotkeys, ...action.payload };
+    },
+    setGlobalHotkeys: (state, action: PayloadAction<Partial<UIState['globalHotkeys']>>) => {
+      state.globalHotkeys = { ...state.globalHotkeys, ...action.payload };
     },
     setAutoSaveOnAdd: (state, action: PayloadAction<boolean>) => {
       state.autoSaveOnAdd = action.payload;
@@ -94,6 +98,7 @@ export const {
   setWindowSettings,
   setPlayerSettings,
   setHotkeys,
+  setGlobalHotkeys,
   setAutoSaveOnAdd,
   resetHotkeys,
   addNotification,

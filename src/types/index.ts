@@ -1,4 +1,4 @@
-﻿export type MediaType = 'video' | 'audio' | 'image';
+export type MediaType = 'video' | 'audio' | 'image';
 export type Language = 'ru' | 'en';
 export type ThemeMode = 'dark' | 'light';
 export type RepeatMode = 'none' | 'all' | 'one' | 'random';
@@ -18,6 +18,12 @@ export type HotkeyAction =
   | 'toggleFullscreen'
   | 'openFiles';
 export type Hotkeys = Record<HotkeyAction, string>;
+export type GlobalHotkeyAction =
+  | 'togglePlayPause'
+  | 'previousTrack'
+  | 'nextTrack'
+  | 'toggleWindow';
+export type GlobalHotkeys = Record<GlobalHotkeyAction, string>;
 
 export interface MediaFile {
   id: string;
@@ -94,6 +100,7 @@ export interface UIState {
   windowSettings: WindowSettings;
   playerSettings: PlayerSettings;
   hotkeys: Hotkeys;
+  globalHotkeys: GlobalHotkeys;
   autoSaveOnAdd: boolean;
   notifications: Notification[];
 }
@@ -107,6 +114,13 @@ declare global {
       removeAllListeners: (channel: string) => void;
       invoke: (channel: string, ...args: any[]) => Promise<any>;
       openFileDialog: () => void;
+      pickMediaFolder: () => Promise<{
+        success: boolean;
+        canceled?: boolean;
+        folderPath?: string;
+        files?: string[];
+        error?: string;
+      }>;
       loadSavedPlaylists: () => Promise<any>;
       deletePlaylistFolder: (name: string) => Promise<any>;
       saveFilesToPlaylist: (name: string, files: any[]) => Promise<any>;
@@ -117,7 +131,17 @@ declare global {
       getAutoStart: () => Promise<any>;
       setTrayMode: (enabled: boolean) => Promise<any>;
       getTrayMode: () => Promise<any>;
+      setGlobalHotkeys: (bindings: Partial<GlobalHotkeys>) => Promise<any>;
+      getGlobalHotkeys: () => Promise<any>;
+      exportPlaylistArchive: (payload: {
+        playlistName: string;
+        files: Array<Pick<MediaFile, 'path' | 'name' | 'type' | 'format'>>;
+      }) => Promise<any>;
+      previewPlaylistImport: (payload: { type: 'url'; url: string } | { type: 'file'; filePath: string }) => Promise<any>;
+      applyPlaylistImport: (token: string) => Promise<any>;
+      discardPlaylistImportPreview: (token: string) => Promise<any>;
       openUrl: (url: string) => Promise<any>;
+      resolveVkVideoUrl: (url: string) => Promise<any>;
       enterPictureInPicture: () => Promise<any>;
       exitPictureInPicture: () => Promise<any>;
       minimizeWindow: () => void;

@@ -1,13 +1,13 @@
 {
   "name": "universal-media-player",
-  "version": "4.0.0",
+  "version": "4.6.3",
   "description": "Modern universal media player for video, audio and images",
   "main": "public/main.js",
   "author": "Media Player Team",
   "license": "MIT",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && node -e \"require('fs').copyFileSync('public/Untitled Project (1).jpg', 'build/icon.png'); console.log('Icon copied');\"",
+    "build": "tsc && vite build && node -e \"const fs=require('fs'); fs.copyFileSync('public/icon.png', 'build/icon.png'); if (fs.existsSync('public/icon.ico')) fs.copyFileSync('public/icon.ico', 'build/icon.ico'); console.log('Icon assets copied');\"",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "npm run build && electron-builder --win --publish never",
@@ -43,7 +43,7 @@
   "build": {
     "appId": "com.mediaplayer.app",
     "productName": "Universal Media Player",
-    "icon": "build/icon.png",
+    "icon": "build/icon.ico",
     "directories": {
       "output": "dist-app"
     },
