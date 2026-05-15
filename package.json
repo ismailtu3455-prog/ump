@@ -1,6 +1,6 @@
 {
   "name": "universal-media-player",
-  "version": "4.6.3",
+  "version": "4.6.7",
   "description": "Modern universal media player for video, audio and images",
   "main": "public/main.js",
   "author": "Media Player Team",
@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.0.1",
+    "electron-updater": "^6.8.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-redux": "^9.0.4"
@@ -47,6 +48,13 @@
     "directories": {
       "output": "dist-app"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ismailtu3455-prog",
+        "repo": "ump"
+      }
+    ],
     "files": [
       "build/**/*",
       "public/main.js",

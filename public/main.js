@@ -14,6 +14,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { autoUpdater } = require('electron-updater');
 
 const isDev = !app.isPackaged;
 const PRELOAD_PATH = path.join(__dirname, 'preload.js');
@@ -52,6 +53,8 @@ const GLOBAL_HOTKEY_ACTIONS = new Set([
   'nextTrack',
   'toggleWindow',
 ]);
+const AUTO_UPDATE_CHECK_DELAY_MS = 15000;
+const AUTO_UPDATE_RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 function resolveIconPath() {
   const candidates = [
@@ -83,10 +86,114 @@ let isQuitting = false;
 let launchToTrayOnStartup = process.argv.includes(STARTUP_TRAY_ARG);
 const activeImportPreviews = new Map();
 const registeredGlobalHotkeys = new Map();
+let autoUpdateInitialized = false;
+let autoUpdateIntervalRef = null;
+let autoUpdateDialogOpen = false;
 
 const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
   app.quit();
+}
+
+function showSystemNotification(title, body) {
+  try {
+    const notification = new Notification({
+      title,
+      body,
+      icon: APP_ICON,
+    });
+    notification.show();
+  } catch {
+    // Ignore notification errors on unsupported environments.
+  }
+}
+
+function shouldSkipAutoUpdate() {
+  if (isDev || !app.isPackaged) return true;
+  if (!['win32', 'darwin'].includes(process.platform)) return true;
+
+  if (
+    process.platform === 'win32' &&
+    process.argv.some((argument) => String(argument || '').toLowerCase().includes('--squirrel-firstrun'))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function checkForAppUpdates() {
+  if (shouldSkipAutoUpdate()) return;
+
+  autoUpdater.checkForUpdates().catch((error) => {
+    const errorText = String(error?.message || error || 'Unknown auto-update error');
+    console.error(`[auto-update] ${errorText}`);
+  });
+}
+
+function setupAutoUpdates() {
+  if (autoUpdateInitialized || shouldSkipAutoUpdate()) return;
+  autoUpdateInitialized = true;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('checking-for-update', () => {
+    console.info('[auto-update] Checking for updates...');
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    const version = String(info?.version || '').trim();
+    const versionSuffix = version ? ` ${version}` : '';
+    showSystemNotification('Update found', `Downloading new version${versionSuffix}.`);
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    console.info('[auto-update] No updates found.');
+  });
+
+  autoUpdater.on('error', (error) => {
+    const errorText = String(error?.message || error || 'Unknown auto-update error');
+    console.error(`[auto-update] ${errorText}`);
+    showSystemNotification('Update error', errorText);
+  });
+
+  autoUpdater.on('update-downloaded', async (info) => {
+    const version = String(info?.version || '').trim();
+    const versionLabel = version ? ` ${version}` : '';
+    showSystemNotification('Update ready', `Version${versionLabel} was downloaded.`);
+
+    if (autoUpdateDialogOpen) return;
+    autoUpdateDialogOpen = true;
+
+    try {
+      const parentWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+      const result = await dialog.showMessageBox(parentWindow, {
+        type: 'info',
+        title: 'Update ready',
+        message: 'A new version has been downloaded.',
+        detail: 'Restart now to install it?',
+        buttons: ['Install now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+      });
+
+      if (result.response === 0) {
+        isQuitting = true;
+        autoUpdater.quitAndInstall(false, true);
+      }
+    } catch (error) {
+      const errorText = String(error?.message || error || 'Failed to show update dialog');
+      console.error(`[auto-update] ${errorText}`);
+    } finally {
+      autoUpdateDialogOpen = false;
+    }
+  });
+
+  setTimeout(() => {
+    checkForAppUpdates();
+    autoUpdateIntervalRef = setInterval(checkForAppUpdates, AUTO_UPDATE_RECHECK_INTERVAL_MS);
+  }, AUTO_UPDATE_CHECK_DELAY_MS);
 }
 
 function ensurePlaylistsDirectory() {
@@ -2302,6 +2409,10 @@ app.on('open-file', (event, filePath) => {
 app.on('before-quit', () => {
   isQuitting = true;
   globalShortcut.unregisterAll();
+  if (autoUpdateIntervalRef) {
+    clearInterval(autoUpdateIntervalRef);
+    autoUpdateIntervalRef = null;
+  }
   for (const token of activeImportPreviews.keys()) {
     cleanupImportPreview(token);
   }
@@ -2337,6 +2448,8 @@ app.whenReady().then(() => {
   if (startupFiles.length > 0) {
     queueFilesForOpen(startupFiles);
   }
+
+  setupAutoUpdates();
 });
 
 app.on('window-all-closed', () => {
